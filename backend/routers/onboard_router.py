@@ -545,8 +545,17 @@ class DomainCreateRequest(BaseModel):
     organization: dict
     user: dict
     teams: list
-    jira: Optional[dict] = None
+    # Code platform (pick one or none)
     gitlab: Optional[dict] = None
+    github: Optional[dict] = None
+    # Issue tracker (pick one or none)
+    jira: Optional[dict] = None
+    linear: Optional[dict] = None
+    monday: Optional[dict] = None
+    asana: Optional[dict] = None
+    # AI
+    llm: Optional[dict] = None
+    # Other
     optional: Optional[dict] = None
 
 
@@ -565,9 +574,6 @@ async def create_domain(body: DomainCreateRequest):
         raise HTTPException(status_code=422, detail="organization.slug is required")
     if not re.match(r'^[a-zA-Z0-9_-]+$', slug):
         raise HTTPException(status_code=422, detail="slug must contain only alphanumeric characters, hyphens, and underscores")
-    if not body.gitlab or not body.gitlab.get("token"):
-        raise HTTPException(status_code=422, detail="GitLab credentials are required to create a usable domain")
-
     CONFIG_DOMAINS_DIR.mkdir(parents=True, exist_ok=True)
     config_path = CONFIG_DOMAINS_DIR / f"{slug}.yaml"
 
@@ -591,6 +597,12 @@ async def create_domain(body: DomainCreateRequest):
             "provider": "jira",
             "config": {"auth_method": "api_token"},
         }
+    if body.linear and body.linear.get("api_key"):
+        integrations["issue_tracker"] = {"provider": "linear", "config": {}}
+    if body.monday and body.monday.get("token"):
+        integrations["issue_tracker"] = {"provider": "monday", "config": {}}
+    if body.asana and body.asana.get("token"):
+        integrations["issue_tracker"] = {"provider": "asana", "config": {}}
     if body.gitlab:
         gitlab_config: dict = {}
         if body.gitlab.get("base_group"):
@@ -601,11 +613,24 @@ async def create_domain(body: DomainCreateRequest):
             "provider": "gitlab",
             "config": gitlab_config,
         }
+    if body.github and body.github.get("token"):
+        github_config: dict = {}
+        if body.github.get("org"):
+            github_config["org"] = body.github["org"]
+        integrations["code_platform"] = {
+            "provider": "github",
+            "config": github_config,
+        }
     if body.optional and body.optional.get("snyk_token"):
         integrations["security"] = {
             "provider": "snyk",
             "config": {},
         }
+    if body.llm:
+        if body.llm.get("openai_api_key"):
+            integrations["ai"] = {"provider": "openai", "config": {}}
+        elif body.llm.get("anthropic_api_key"):
+            integrations["ai"] = {"provider": "anthropic", "config": {}}
     if integrations:
         config_dict["integrations"] = integrations
     if body.optional and body.optional.get("port_client_id"):
@@ -647,6 +672,25 @@ async def create_domain(body: DomainCreateRequest):
         secret_payload["snyk"] = {
             "token": body.optional.get("snyk_token", ""),
         }
+    if body.github and body.github.get("token"):
+        secret_payload["github"] = {
+            "token": body.github.get("token", ""),
+            "org": body.github.get("org", ""),
+        }
+    if body.linear and body.linear.get("api_key"):
+        secret_payload["linear"] = {"api_key": body.linear["api_key"]}
+    if body.monday and body.monday.get("token"):
+        secret_payload["monday"] = {"token": body.monday["token"]}
+    if body.asana and body.asana.get("token"):
+        secret_payload["asana"] = {"token": body.asana["token"]}
+    if body.llm:
+        llm_secrets: dict = {}
+        if body.llm.get("openai_api_key"):
+            llm_secrets["openai_api_key"] = body.llm["openai_api_key"]
+        if body.llm.get("anthropic_api_key"):
+            llm_secrets["anthropic_api_key"] = body.llm["anthropic_api_key"]
+        if llm_secrets:
+            secret_payload["llm"] = llm_secrets
     if secret_payload:
         save_domain_secrets(slug, secret_payload)
 
