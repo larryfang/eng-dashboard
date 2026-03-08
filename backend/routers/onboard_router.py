@@ -1,0 +1,398 @@
+"""
+Onboarding wizard backend — auto-discovery endpoints.
+
+All endpoints accept credentials in the request body (not from env vars),
+so they work before a domain is configured.
+
+POST /api/onboard/validate                  → test GitLab + Jira creds
+GET  /api/onboard/discover/gitlab-groups    → list subgroups under a GitLab group path
+GET  /api/onboard/discover/jira-projects    → list Jira projects for a site
+GET  /api/onboard/discover/gitlab-members   → list members of a GitLab group
+POST /api/onboard/create                    → save new domain config + init DB + seed
+"""
+import logging
+import urllib.parse
+from pathlib import Path
+from typing import Optional
+
+import requests
+from fastapi import APIRouter, HTTPException, Query, Request
+from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
+router = APIRouter(prefix="/api/onboard", tags=["onboard"])
+
+DEFAULT_GITLAB_URL = "https://gitlab.com"
+CONFIG_DOMAINS_DIR = Path(__file__).resolve().parent.parent.parent / "config" / "domains"
+
+
+def _gitlab_api_base(gitlab_url: str | None = None) -> str:
+    base = (gitlab_url or DEFAULT_GITLAB_URL).rstrip("/")
+    return f"{base}/api/v4"
+
+
+# ── Validate ───────────────────────────────────────────────────────────────────
+
+class ValidateRequest(BaseModel):
+    gitlab_token: str
+    gitlab_url: Optional[str] = None
+    jira_url: Optional[str] = None
+    jira_email: Optional[str] = None
+    jira_token: Optional[str] = None
+
+
+@router.post("/validate")
+async def validate_credentials(body: ValidateRequest):
+    results: dict = {}
+    gitlab_api = _gitlab_api_base(body.gitlab_url)
+
+    # GitLab
+    try:
+        r = requests.get(
+            f"{gitlab_api}/user",
+            headers={"PRIVATE-TOKEN": body.gitlab_token},
+            timeout=10,
+        )
+        if r.ok:
+            data = r.json()
+            results["gitlab"] = {"ok": True, "user": data.get("username"), "error": None}
+        else:
+            results["gitlab"] = {"ok": False, "user": None, "error": f"HTTP {r.status_code}"}
+    except Exception as e:
+        results["gitlab"] = {"ok": False, "user": None, "error": str(e)}
+
+    # Jira (optional)
+    if body.jira_url and body.jira_email and body.jira_token:
+        try:
+            r = requests.get(
+                f"{body.jira_url.rstrip('/')}/rest/api/3/myself",
+                auth=(body.jira_email, body.jira_token),
+                timeout=10,
+            )
+            if r.ok:
+                data = r.json()
+                results["jira"] = {"ok": True, "user": data.get("displayName"), "error": None}
+            else:
+                results["jira"] = {"ok": False, "user": None, "error": f"HTTP {r.status_code}"}
+        except Exception as e:
+            results["jira"] = {"ok": False, "user": None, "error": str(e)}
+    else:
+        results["jira"] = None
+
+    return results
+
+
+# ── GitLab group discovery ─────────────────────────────────────────────────────
+
+@router.get("/discover/gitlab-groups")
+async def discover_gitlab_groups(
+    request: Request,
+    token: Optional[str] = Query(default=None, description="GitLab personal access token"),
+    gitlab_url: Optional[str] = Query(default=None, description="GitLab base URL"),
+    group_path: str = Query(..., description="GitLab group path, e.g. my-org/teams"),
+):
+    """
+    List subgroups under a GitLab group path.
+    Returns [{id, name, full_path, description}].
+    """
+    # Prefer header, fall back to query param
+    token = request.headers.get("x-gitlab-token") or token
+    gitlab_url = request.headers.get("x-gitlab-url") or gitlab_url
+    if not token:
+        raise HTTPException(status_code=400, detail="GitLab token is required")
+    gitlab_api = _gitlab_api_base(gitlab_url)
+
+    # Resolve group path to numeric ID
+    encoded = urllib.parse.quote(group_path, safe="")
+    try:
+        r = requests.get(
+            f"{gitlab_api}/groups/{encoded}",
+            headers={"PRIVATE-TOKEN": token},
+            timeout=15,
+        )
+        if not r.ok:
+            raise HTTPException(
+                status_code=r.status_code,
+                detail=f"GitLab group not found: {group_path} (HTTP {r.status_code})",
+            )
+        group_id = r.json()["id"]
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    # Paginate subgroups
+    subgroups = []
+    page = 1
+    while True:
+        r = requests.get(
+            f"{gitlab_api}/groups/{group_id}/subgroups",
+            headers={"PRIVATE-TOKEN": token},
+            params={"per_page": 50, "page": page, "order_by": "name"},
+            timeout=15,
+        )
+        if not r.ok:
+            raise HTTPException(
+                status_code=r.status_code,
+                detail=f"GitLab subgroup discovery failed for {group_path} (HTTP {r.status_code})",
+            )
+        batch = r.json()
+        if not batch:
+            break
+        subgroups.extend([
+            {
+                "id": g["id"],
+                "name": g["name"],
+                "full_path": g["full_path"],
+                "description": g.get("description", ""),
+            }
+            for g in batch
+        ])
+        if len(batch) < 50:
+            break
+        page += 1
+
+    return {"groups": subgroups}
+
+
+# ── Jira project discovery ─────────────────────────────────────────────────────
+
+@router.get("/discover/jira-projects")
+async def discover_jira_projects(
+    request: Request,
+    jira_url: str = Query(...),
+    jira_email: Optional[str] = Query(default=None),
+    jira_token: Optional[str] = Query(default=None),
+):
+    """List Jira software projects. Returns [{key, name, type}]."""
+    # Prefer headers, fall back to query params
+    jira_token = request.headers.get("x-jira-token") or jira_token
+    jira_email = request.headers.get("x-jira-email") or jira_email
+    if not jira_email or not jira_token:
+        raise HTTPException(status_code=400, detail="Jira email and token are required")
+
+    try:
+        r = requests.get(
+            f"{jira_url.rstrip('/')}/rest/api/3/project/search",
+            auth=(jira_email, jira_token),
+            params={"maxResults": 100, "orderBy": "name", "typeKey": "software"},
+            timeout=15,
+        )
+        if not r.ok:
+            raise HTTPException(
+                status_code=r.status_code,
+                detail=f"Jira project list failed: HTTP {r.status_code}",
+            )
+        data = r.json()
+        projects = [
+            {"key": p["key"], "name": p["name"], "type": p.get("projectTypeKey", "software")}
+            for p in data.get("values", [])
+        ]
+        return {"projects": projects}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── GitLab member discovery ────────────────────────────────────────────────────
+
+@router.get("/discover/gitlab-members")
+async def discover_gitlab_members(
+    request: Request,
+    token: Optional[str] = Query(default=None),
+    gitlab_url: Optional[str] = Query(default=None, description="GitLab base URL"),
+    group_path: str = Query(..., description="GitLab group full_path"),
+):
+    """List direct members of a GitLab group. Returns [{username, name, role}]."""
+    # Prefer header, fall back to query param
+    token = request.headers.get("x-gitlab-token") or token
+    gitlab_url = request.headers.get("x-gitlab-url") or gitlab_url
+    if not token:
+        raise HTTPException(status_code=400, detail="GitLab token is required")
+    gitlab_api = _gitlab_api_base(gitlab_url)
+
+    encoded = urllib.parse.quote(group_path, safe="")
+    members = []
+    page = 1
+    while True:
+        r = requests.get(
+            f"{gitlab_api}/groups/{encoded}/members/all",
+            headers={"PRIVATE-TOKEN": token},
+            params={"per_page": 50, "page": page},
+            timeout=15,
+        )
+        if not r.ok:
+            raise HTTPException(
+                status_code=r.status_code,
+                detail=f"GitLab member discovery failed for {group_path} (HTTP {r.status_code})",
+            )
+        batch = r.json()
+        if not batch:
+            break
+        members.extend([
+            {
+                "username": m["username"],
+                "name": m["name"],
+                "role": _access_to_role(m.get("access_level", 30)),
+            }
+            for m in batch
+        ])
+        if len(batch) < 50:
+            break
+        page += 1
+
+    return {"members": members}
+
+
+def _access_to_role(level: int) -> str:
+    """Map GitLab access level integer to role string."""
+    if level >= 50:
+        return "owner"
+    if level >= 40:
+        return "TL"       # Maintainer
+    if level >= 30:
+        return "engineer"  # Developer
+    return "observer"
+
+
+# ── Create domain ──────────────────────────────────────────────────────────────
+
+class DomainCreateRequest(BaseModel):
+    organization: dict
+    user: dict
+    teams: list
+    jira: Optional[dict] = None
+    gitlab: Optional[dict] = None
+    optional: Optional[dict] = None
+
+
+@router.post("/create")
+async def create_domain(body: DomainCreateRequest):
+    """
+    Persist a new domain config from wizard payload, initialise its DB, and seed it.
+    Switches to the new domain as the active domain.
+    """
+    import yaml
+
+    import re
+
+    slug = body.organization.get("slug", "").strip()
+    if not slug:
+        raise HTTPException(status_code=422, detail="organization.slug is required")
+    if not re.match(r'^[a-zA-Z0-9_-]+$', slug):
+        raise HTTPException(status_code=422, detail="slug must contain only alphanumeric characters, hyphens, and underscores")
+    if not body.gitlab or not body.gitlab.get("token"):
+        raise HTTPException(status_code=422, detail="GitLab credentials are required to create a usable domain")
+
+    CONFIG_DOMAINS_DIR.mkdir(parents=True, exist_ok=True)
+    config_path = CONFIG_DOMAINS_DIR / f"{slug}.yaml"
+
+    if config_path.exists():
+        from backend.core.config_loader import get_domain_config
+        existing = get_domain_config(slug)
+        if existing.teams:
+            raise HTTPException(status_code=409, detail=f"Domain '{slug}' already exists")
+        # Stub domain (no teams) — allow overwrite to complete setup
+
+    # Build YAML-compatible config dict mirroring organization.yaml structure
+    config_dict: dict = {
+        "organization": dict(body.organization),
+        "user": body.user,
+        "teams": body.teams,
+    }
+    integrations: dict = {}
+    if body.jira and body.jira.get("url"):
+        config_dict["organization"]["atlassian_site_url"] = body.jira.get("url", "")
+        integrations["issue_tracker"] = {
+            "provider": "jira",
+            "config": {"auth_method": "api_token"},
+        }
+    if body.gitlab:
+        gitlab_config: dict = {}
+        if body.gitlab.get("base_group"):
+            gitlab_config["base_group"] = body.gitlab["base_group"]
+        if body.gitlab.get("url"):
+            gitlab_config["url"] = body.gitlab["url"]
+        integrations["code_platform"] = {
+            "provider": "gitlab",
+            "config": gitlab_config,
+        }
+    if body.optional and body.optional.get("snyk_token"):
+        integrations["security"] = {
+            "provider": "snyk",
+            "config": {},
+        }
+    if integrations:
+        config_dict["integrations"] = integrations
+    if body.optional and body.optional.get("port_client_id"):
+        config_dict["dora"] = {
+            "provider": "port",
+            "config": {
+                "base_url": body.optional.get("port_base_url", "https://api.getport.io"),
+            },
+        }
+
+    config_path.write_text(
+        yaml.dump(config_dict, allow_unicode=True, default_flow_style=False, sort_keys=False),
+        encoding="utf-8",
+    )
+    logger.info(f"Domain config written: {config_path}")
+
+    from backend.services.domain_credentials import save_domain_secrets
+
+    secret_payload: dict = {}
+    if body.gitlab and body.gitlab.get("token"):
+        secret_payload["gitlab"] = {
+            "token": body.gitlab.get("token", ""),
+            "url": body.gitlab.get("url", "https://gitlab.com"),
+            "base_group": body.gitlab.get("base_group", ""),
+        }
+    if body.jira and body.jira.get("email") and body.jira.get("token"):
+        secret_payload["jira"] = {
+            "url": body.jira.get("url", ""),
+            "email": body.jira.get("email", ""),
+            "token": body.jira.get("token", ""),
+        }
+    if body.optional and body.optional.get("port_client_id"):
+        secret_payload["port"] = {
+            "client_id": body.optional.get("port_client_id", ""),
+            "client_secret": body.optional.get("port_client_secret", ""),
+            "base_url": body.optional.get("port_base_url", "https://api.getport.io"),
+        }
+    if body.optional and body.optional.get("snyk_token"):
+        secret_payload["snyk"] = {
+            "token": body.optional.get("snyk_token", ""),
+        }
+    if secret_payload:
+        save_domain_secrets(slug, secret_payload)
+
+    # Init DB + seed
+    from backend.database_domain import init_domain_db, get_domain_engine
+    from backend.services.domain_seeder import seed_reference_data
+    from backend.core.config_loader import reload_domain_config
+    from sqlalchemy.orm import sessionmaker as _sm
+    from backend.services.domain_registry import switch_domain
+
+    init_domain_db(slug)
+    cfg = reload_domain_config(slug)  # Force reload from disk (handles stub→full overwrite)
+    eng = get_domain_engine(slug)
+    db = _sm(bind=eng)()
+    try:
+        seed_result = seed_reference_data(db, domain_slug=slug)
+    finally:
+        db.close()
+
+    switch_domain(slug)
+
+    # Kick off initial sync in the background (non-blocking)
+    import asyncio
+    try:
+        from backend.services.scheduler import run_initial_sync
+        loop = asyncio.get_event_loop()
+        loop.create_task(run_initial_sync())
+        logger.info(f"Initial sync triggered for domain '{slug}'")
+    except Exception as e:
+        logger.warning(f"Could not trigger initial sync: {e}")
+
+    return {"ok": True, "slug": slug, "name": cfg.name, "seeded": seed_result}

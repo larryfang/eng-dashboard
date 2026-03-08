@@ -1,0 +1,69 @@
+# ── Secrets & local config ──────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+config/organization.yaml
+config/domains/*.yaml
+!config/domains/.gitkeep
+
+# ── Python ───────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+.uv/
+pip-log.txt
+
+# ── Database & runtime state ─────────────────────────────────────────────────
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+backend/data/
+jira_sync_state.json
+
+# ── Logs ─────────────────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ── Frontend ─────────────────────────────────────────────────────────────────
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+
+# ── Organisation-specific scripts (not part of the shareable dashboard) ──────
+orgs/
+
+# ── macOS ────────────────────────────────────────────────────────────────────
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# ── IDE ──────────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ── Domain DBs (ecosystem.db etc.) ───────────────────────────────────────────
+data/domains/*.db
+data/domains/*.db-shm
+data/domains/*.db-wal
+
+# ── Misc ─────────────────────────────────────────────────────────────────────
+*.bak
+*.tmp
+.cache/
+.worktrees/

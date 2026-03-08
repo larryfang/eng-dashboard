@@ -1,0 +1,161 @@
+# =============================================================================
+# Engineering Director Dashboard — Organization Configuration Template
+# =============================================================================
+# Copy this file to config/organization.yaml and fill in your details.
+# Then run ./start.sh — the setup wizard will guide you through the rest.
+#
+# All credentials stay in .env (never commit that file).
+# This YAML file is safe to commit once you remove personal details.
+# =============================================================================
+
+organization:
+  name: Acme Engineering                # Your org/department name
+  slug: acme-eng                        # URL-safe identifier (no spaces)
+  description: Platform & integrations  # Short description
+  atlassian_cloud_id: ""                # From: https://yourcompany.atlassian.net/_edge/tenant_info
+  atlassian_site_url: https://acme.atlassian.net
+  jira_roadmap_url: ""                  # Optional: your Jira Plans URL
+
+user:
+  name: Alex Smith                      # Your name
+  email: alex.smith@acme.com            # Your email (used for Jira auth)
+  role: Director of Engineering
+  timezone: America/New_York            # IANA timezone: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
+
+# =============================================================================
+# Teams
+# Each team needs: key (Jira project prefix), name, gitlab_path, and members.
+# =============================================================================
+
+teams:
+  - key: PLAT                           # Jira project key (e.g., PLAT-123)
+    name: Platform                      # Business/product name
+    slug: platform                      # Used in API calls and URLs
+    scrum_name: Phoenix                 # Scrum team name (if different from name)
+    aliases:
+      - phoenix
+    lead: Jordan Lee
+    lead_email: jordan.lee@acme.com
+    headcount: 5
+    effective_engineers: 4              # Engineers actively coding (exclude PMs, QA leads)
+    products:
+      - Internal Platform
+      - Developer Tools
+    jira_project: PLAT                  # Jira project key
+    gitlab_path: acme/platform/backend  # GitLab group path (no leading slash)
+    additional_gitlab_paths:            # Optional: additional GitLab groups for this team
+      - acme/platform/infrastructure
+    snyk_org: ""                        # Optional: Snyk org name for security metrics
+    port_team_id: ""                    # Optional: Port.io team identifier
+    gitlab_members:
+      - username: jlee                  # GitLab username
+        name: Jordan Lee
+        role: TL                        # TL, engineer, senior, qa, etc.
+        exclude_from_metrics: false
+      - username: mchen
+        name: Maya Chen
+        role: engineer
+      - username: rpatil
+        name: Raj Patil
+        role: engineer
+      - username: swilson
+        name: Sam Wilson
+        role: engineer
+
+  - key: INT
+    name: Integrations
+    slug: integrations
+    scrum_name: Cosmos
+    aliases:
+      - cosmos
+    lead: Taylor Kim
+    lead_email: taylor.kim@acme.com
+    headcount: 4
+    effective_engineers: 4
+    products:
+      - Salesforce Connector
+      - HubSpot Connector
+      - Zapier Integration
+    jira_project: INT
+    gitlab_path: acme/integrations
+    snyk_org: ""
+    port_team_id: ""
+    gitlab_members:
+      - username: tkim
+        name: Taylor Kim
+        role: TL
+        exclude_from_metrics: false
+      - username: apatel
+        name: Ananya Patel
+        role: engineer
+      - username: dgarcia
+        name: Diego Garcia
+        role: engineer
+
+# =============================================================================
+# Integrations
+# Only configure the integrations you use. All credentials go in .env.
+# =============================================================================
+
+integrations:
+  issue_tracker:
+    provider: jira                      # jira | github | linear | asana
+    config:
+      # Credentials come from .env: JIRA_EMAIL, JIRA_API_TOKEN, JIRA_URL
+
+  code_platform:
+    provider: gitlab                    # gitlab | github
+    config:
+      # Credentials come from .env: GITLAB_TOKEN
+      excluded_authors:                 # Bots/service accounts to exclude from metrics
+        - renovate-bot
+        - dependabot
+      excluded_project_prefixes:        # GitLab paths to ignore
+        - acme/archive
+
+  # Optional: Security scanning via Snyk
+  # security:
+  #   provider: snyk
+  #   config:
+  #     # Credentials come from .env: SNYK_TOKEN
+
+# =============================================================================
+# DORA Metrics (optional — requires Port.io or custom pipeline data)
+# =============================================================================
+# dora:
+#   provider: port                      # port | buildkite | custom
+#   config:
+#     # Credentials come from .env: PORT_CLIENT_ID, PORT_CLIENT_SECRET
+
+# =============================================================================
+# Metrics Configuration
+# =============================================================================
+
+metrics:
+  cache_ttl_hours: 24                   # How long to cache API responses
+  stale_epic_days: 30                   # Days without update before epic is "stale"
+  dora_targets:
+    deploy_frequency_per_week: 15       # Target deployments per week (Elite: daily)
+    lead_time_hours: 24                 # Target lead time in hours (Elite: <24h)
+    change_failure_rate: 0.05           # Target CFR (Elite: <5%)
+    mttr_hours: 1                       # Mean time to restore (Elite: <1h)
+
+# =============================================================================
+# Stakeholders (optional — used for relationship tracking)
+# =============================================================================
+
+stakeholders:
+  - name: Sam Executive
+    role: VP Engineering
+    email: sam.exec@acme.com
+    title: VP of Engineering
+    importance: critical
+    relationship: upward
+
+# =============================================================================
+# Knowledge Base (optional — facts always available to the AI assistant)
+# =============================================================================
+
+knowledge_base:
+  - "Platform team owns the CI/CD infrastructure"
+  - "Integrations team follows a connector-first architecture"

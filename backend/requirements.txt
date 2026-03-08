@@ -1,0 +1,20 @@
+# DEPRECATED: Use `uv sync` instead (reads from pyproject.toml)
+# This file is kept for backwards compatibility only.
+#
+# For full dependencies: uv sync
+# For CI (minimal):      uv pip install -r requirements-ci.txt
+#
+requests>=2.31.0
+openai>=1.106.1
+python-dotenv>=1.1.1
+atlassian-python-api>=3.41.0
+python-pptx>=1.0.0
+claude-agent-sdk>=0.1.18
+# RAG enhancements
+tiktoken>=0.5.0
+sentence-transformers>=2.2.0
+# Newsletter system
+feedparser>=6.0.0
+pyyaml>=6.0
+python-dateutil>=2.8.0
+playwright>=1.40.0
