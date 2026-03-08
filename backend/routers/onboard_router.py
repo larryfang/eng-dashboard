@@ -34,34 +34,73 @@ def _gitlab_api_base(gitlab_url: str | None = None) -> str:
 # ── Validate ───────────────────────────────────────────────────────────────────
 
 class ValidateRequest(BaseModel):
-    gitlab_token: str
+    # Code platform
+    gitlab_token: Optional[str] = None
     gitlab_url: Optional[str] = None
+    github_token: Optional[str] = None
+    github_org: Optional[str] = None
+    # Issue tracker
     jira_url: Optional[str] = None
     jira_email: Optional[str] = None
     jira_token: Optional[str] = None
+    linear_api_key: Optional[str] = None
+    monday_token: Optional[str] = None
+    asana_token: Optional[str] = None
+    # AI
+    openai_api_key: Optional[str] = None
+    anthropic_api_key: Optional[str] = None
+    # Security
+    snyk_token: Optional[str] = None
+
+
+def _validate_result(ok: bool, user: str | None = None, error: str | None = None) -> dict:
+    """Build a consistent validation result dict."""
+    return {"ok": ok, "user": user, "error": error}
 
 
 @router.post("/validate")
 async def validate_credentials(body: ValidateRequest):
     results: dict = {}
-    gitlab_api = _gitlab_api_base(body.gitlab_url)
 
-    # GitLab
-    try:
-        r = requests.get(
-            f"{gitlab_api}/user",
-            headers={"PRIVATE-TOKEN": body.gitlab_token},
-            timeout=10,
-        )
-        if r.ok:
-            data = r.json()
-            results["gitlab"] = {"ok": True, "user": data.get("username"), "error": None}
-        else:
-            results["gitlab"] = {"ok": False, "user": None, "error": f"HTTP {r.status_code}"}
-    except Exception as e:
-        results["gitlab"] = {"ok": False, "user": None, "error": str(e)}
+    # ── GitLab ────────────────────────────────────────────────────────────
+    if body.gitlab_token:
+        gitlab_api = _gitlab_api_base(body.gitlab_url)
+        try:
+            r = requests.get(
+                f"{gitlab_api}/user",
+                headers={"PRIVATE-TOKEN": body.gitlab_token},
+                timeout=10,
+            )
+            if r.ok:
+                results["gitlab"] = _validate_result(True, user=r.json().get("username"))
+            else:
+                results["gitlab"] = _validate_result(False, error=f"HTTP {r.status_code}")
+        except Exception as e:
+            results["gitlab"] = _validate_result(False, error=str(e))
+    else:
+        results["gitlab"] = None
 
-    # Jira (optional)
+    # ── GitHub ────────────────────────────────────────────────────────────
+    if body.github_token:
+        try:
+            r = requests.get(
+                "https://api.github.com/user",
+                headers={
+                    "Authorization": f"Bearer {body.github_token}",
+                    "Accept": "application/vnd.github+json",
+                },
+                timeout=10,
+            )
+            if r.ok:
+                results["github"] = _validate_result(True, user=r.json().get("login"))
+            else:
+                results["github"] = _validate_result(False, error=f"HTTP {r.status_code}")
+        except Exception as e:
+            results["github"] = _validate_result(False, error=str(e))
+    else:
+        results["github"] = None
+
+    # ── Jira ──────────────────────────────────────────────────────────────
     if body.jira_url and body.jira_email and body.jira_token:
         try:
             r = requests.get(
@@ -70,14 +109,128 @@ async def validate_credentials(body: ValidateRequest):
                 timeout=10,
             )
             if r.ok:
-                data = r.json()
-                results["jira"] = {"ok": True, "user": data.get("displayName"), "error": None}
+                results["jira"] = _validate_result(True, user=r.json().get("displayName"))
             else:
-                results["jira"] = {"ok": False, "user": None, "error": f"HTTP {r.status_code}"}
+                results["jira"] = _validate_result(False, error=f"HTTP {r.status_code}")
         except Exception as e:
-            results["jira"] = {"ok": False, "user": None, "error": str(e)}
+            results["jira"] = _validate_result(False, error=str(e))
     else:
         results["jira"] = None
+
+    # ── Linear ────────────────────────────────────────────────────────────
+    if body.linear_api_key:
+        try:
+            r = requests.post(
+                "https://api.linear.app/graphql",
+                headers={"Authorization": body.linear_api_key},
+                json={"query": "{ viewer { id name } }"},
+                timeout=10,
+            )
+            if r.ok:
+                data = r.json()
+                name = (data.get("data") or {}).get("viewer", {}).get("name")
+                results["linear"] = _validate_result(True, user=name)
+            else:
+                results["linear"] = _validate_result(False, error=f"HTTP {r.status_code}")
+        except Exception as e:
+            results["linear"] = _validate_result(False, error=str(e))
+    else:
+        results["linear"] = None
+
+    # ── Monday.com ────────────────────────────────────────────────────────
+    if body.monday_token:
+        try:
+            r = requests.post(
+                "https://api.monday.com/v2",
+                headers={"Authorization": body.monday_token},
+                json={"query": "{ me { id name } }"},
+                timeout=10,
+            )
+            if r.ok:
+                data = r.json()
+                name = (data.get("data") or {}).get("me", {}).get("name")
+                results["monday"] = _validate_result(True, user=name)
+            else:
+                results["monday"] = _validate_result(False, error=f"HTTP {r.status_code}")
+        except Exception as e:
+            results["monday"] = _validate_result(False, error=str(e))
+    else:
+        results["monday"] = None
+
+    # ── Asana ─────────────────────────────────────────────────────────────
+    if body.asana_token:
+        try:
+            r = requests.get(
+                "https://app.asana.com/api/1.0/users/me",
+                headers={"Authorization": f"Bearer {body.asana_token}"},
+                timeout=10,
+            )
+            if r.ok:
+                data = r.json()
+                name = (data.get("data") or {}).get("name")
+                results["asana"] = _validate_result(True, user=name)
+            else:
+                results["asana"] = _validate_result(False, error=f"HTTP {r.status_code}")
+        except Exception as e:
+            results["asana"] = _validate_result(False, error=str(e))
+    else:
+        results["asana"] = None
+
+    # ── OpenAI ────────────────────────────────────────────────────────────
+    if body.openai_api_key:
+        try:
+            r = requests.get(
+                "https://api.openai.com/v1/models",
+                headers={"Authorization": f"Bearer {body.openai_api_key}"},
+                timeout=10,
+            )
+            if r.ok:
+                results["openai"] = _validate_result(True)
+            else:
+                results["openai"] = _validate_result(False, error=f"HTTP {r.status_code}")
+        except Exception as e:
+            results["openai"] = _validate_result(False, error=str(e))
+    else:
+        results["openai"] = None
+
+    # ── Anthropic ─────────────────────────────────────────────────────────
+    if body.anthropic_api_key:
+        try:
+            r = requests.get(
+                "https://api.anthropic.com/v1/models",
+                headers={
+                    "x-api-key": body.anthropic_api_key,
+                    "anthropic-version": "2023-06-01",
+                },
+                timeout=10,
+            )
+            if r.ok:
+                results["anthropic"] = _validate_result(True)
+            else:
+                results["anthropic"] = _validate_result(False, error=f"HTTP {r.status_code}")
+        except Exception as e:
+            results["anthropic"] = _validate_result(False, error=str(e))
+    else:
+        results["anthropic"] = None
+
+    # ── Snyk ──────────────────────────────────────────────────────────────
+    if body.snyk_token:
+        try:
+            r = requests.get(
+                "https://api.snyk.io/rest/self?version=2024-04-29",
+                headers={"Authorization": f"token {body.snyk_token}"},
+                timeout=10,
+            )
+            if r.ok:
+                data = r.json()
+                name = (data.get("data") or {}).get("attributes", {}).get("name")
+                results["snyk"] = _validate_result(True, user=name)
+            else:
+                results["snyk"] = _validate_result(False, error=f"HTTP {r.status_code}")
+        except Exception as e:
+            results["snyk"] = _validate_result(False, error=str(e))
+    else:
+        results["snyk"] = None
 
     return results
 
