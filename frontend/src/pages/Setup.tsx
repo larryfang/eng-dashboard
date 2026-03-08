@@ -592,6 +592,9 @@ export default function Setup({ onComplete, isNewDomain = false }: SetupProps) {
   const [groupSearch, setGroupSearch] = useState('')
   const [groupsError, setGroupsError] = useState<string | null>(null)
   const [projectsError, setProjectsError] = useState<string | null>(null)
+  const [discoveredGithubTeams, setDiscoveredGithubTeams] = useState<Array<{slug: string; name: string; description: string}>>([])
+  const [discoveringGithubTeams, setDiscoveringGithubTeams] = useState(false)
+  const [githubTeamsError, setGithubTeamsError] = useState<string | null>(null)
   const [memberLoading, setMemberLoading] = useState<Record<string, boolean>>({})
   const [memberErrors, setMemberErrors] = useState<Record<string, string>>({})
   const [createError, setCreateError] = useState<string | null>(null)
@@ -744,6 +747,29 @@ export default function Setup({ onComplete, isNewDomain = false }: SetupProps) {
     }
   }
 
+  const discoverGitHubTeams = async (silent = false) => {
+    if (!github.token.trim() || !github.org.trim()) {
+      if (!silent) setGithubTeamsError('GitHub token and organization are required to discover teams.')
+      return
+    }
+    setDiscoveringGithubTeams(true)
+    if (!silent) setGithubTeamsError(null)
+    try {
+      const response = await axios.get('/api/onboard/discover/github-teams', {
+        params: { org: github.org.trim() },
+        headers: { 'X-GitHub-Token': github.token },
+      })
+      setDiscoveredGithubTeams(response.data.teams ?? [])
+      if (!silent && (response.data.teams ?? []).length === 0) {
+        setGithubTeamsError('No teams found in this organization.')
+      }
+    } catch (error: any) {
+      setGithubTeamsError(error.response?.data?.detail ?? 'GitHub team discovery failed')
+    } finally {
+      setDiscoveringGithubTeams(false)
+    }
+  }
+
   const validateConnections = async () => {
     setValidating(true)
     setCreateError(null)
@@ -793,6 +819,9 @@ export default function Setup({ onComplete, isNewDomain = false }: SetupProps) {
       const followUps: Promise<unknown>[] = []
       if (response.data?.gitlab?.ok && gitlab.baseGroup.trim()) {
         followUps.push(discoverGitLabGroups(true))
+      }
+      if (response.data?.github?.ok && github.org.trim()) {
+        followUps.push(discoverGitHubTeams(true))
       }
       if (response.data?.jira?.ok) {
         followUps.push(discoverJiraProjects(true))
@@ -863,6 +892,60 @@ export default function Setup({ onComplete, isNewDomain = false }: SetupProps) {
     })
   }
 
+  const buildTeamFromGithubTeam = (team: {slug: string; name: string; description: string}): TeamForm => ({
+    jiraKey: '',
+    name: team.name || titleFromSlug(team.slug),
+    slug: team.slug,
+    scrumName: team.name || titleFromSlug(team.slug),
+    lead: '',
+    leadEmail: '',
+    gitlabPath: github.org ? `${github.org}/${team.slug}` : team.slug,
+    members: [],
+  })
+
+  const addDiscoveredGithubTeam = (team: {slug: string; name: string; description: string}) => {
+    const path = github.org ? `${github.org}/${team.slug}` : team.slug
+    setTeams(current => {
+      if (current.some(t => t.gitlabPath === path)) return current
+      return [...current, buildTeamFromGithubTeam(team)]
+    })
+  }
+
+  const addAllDiscoveredGithubTeams = () => {
+    setTeams(current => {
+      const existing = new Set(current.map(t => t.gitlabPath))
+      const fresh = discoveredGithubTeams
+        .filter(t => !existing.has(github.org ? `${github.org}/${t.slug}` : t.slug))
+        .map(buildTeamFromGithubTeam)
+      return [...current, ...fresh]
+    })
+  }
+
+  const discoverGithubMembersForTeam = async (teamIndex: number) => {
+    const team = teams[teamIndex]
+    const key = teamKey(team, teamIndex)
+    if (!team?.gitlabPath || !github.org.trim()) return
+
+    setMemberLoading(c => ({ ...c, [key]: true }))
+    setMemberErrors(c => { const n = { ...c }; delete n[key]; return n })
+
+    try {
+      const teamSlug = team.gitlabPath.split('/').pop() || team.slug
+      const response = await axios.get('/api/onboard/discover/github-members', {
+        params: { org: github.org.trim(), team_slug: teamSlug },
+        headers: { 'X-GitHub-Token': github.token },
+      })
+      const members: Member[] = (response.data.members ?? []).map((m: any) => ({
+        username: m.username || '', name: m.name || m.username || '', email: '', role: 'engineer' as MemberRole,
+      }))
+      updateTeam(teamIndex, { ...team, members })
+    } catch (error: any) {
+      setMemberErrors(c => ({ ...c, [key]: error.response?.data?.detail ?? 'GitHub member discovery failed' }))
+    } finally {
+      setMemberLoading(c => ({ ...c, [key]: false }))
+    }
+  }
+
   const discoverMembersForTeam = async (teamIndex: number) => {
     const team = teams[teamIndex]
     const key = teamKey(team, teamIndex)
@@ -912,8 +995,26 @@ export default function Setup({ onComplete, isNewDomain = false }: SetupProps) {
     const results = await Promise.allSettled(
       teams.map(async (team, index) => {
         if (!team.gitlabPath) {
-          throw new Error(`${team.name || `Team ${index + 1}`} is missing a GitLab path`)
+          throw new Error(`${team.name || `Team ${index + 1}`} is missing a ${codePlatform === 'github' ? 'GitHub' : 'GitLab'} path`)
         }
+
+        if (codePlatform === 'github') {
+          const teamSlug = team.gitlabPath.split('/').pop() || team.slug
+          const response = await axios.get('/api/onboard/discover/github-members', {
+            params: { org: github.org.trim(), team_slug: teamSlug },
+            headers: { 'X-GitHub-Token': github.token },
+          })
+          return {
+            index,
+            members: (response.data.members ?? []).map((member: any) => ({
+              username: member.username || '',
+              name: member.name || member.username || '',
+              email: '',
+              role: 'engineer' as MemberRole,
+            })) as Member[],
+          }
+        }
+
         const response = await axios.get('/api/onboard/discover/gitlab-members', {
           params: { group_path: team.gitlabPath, gitlab_url: gitlab.url.trim() },
           headers: {
@@ -1602,82 +1703,146 @@ export default function Setup({ onComplete, isNewDomain = false }: SetupProps) {
               </div>
               <div>
                 <p className="text-[11px] uppercase tracking-[0.24em] text-slate-500">Team discovery</p>
-                <h2 className="mt-2 text-2xl font-semibold text-white">Turn GitLab structure into configured teams.</h2>
+                <h2 className="mt-2 text-2xl font-semibold text-white">
+                  {codePlatform === 'gitlab' ? 'Turn GitLab structure into configured teams.' :
+                   codePlatform === 'github' ? 'Turn GitHub teams into configured squads.' :
+                   'Define your teams manually.'}
+                </h2>
                 <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-400">
-                  Select discovered groups, map Jira projects if you have them, then pull inherited members from GitLab. This is the step that makes the rest of the app useful.
+                  {codePlatform === 'gitlab' ? 'Select discovered groups, map Jira projects if you have them, then pull inherited members from GitLab.' :
+                   codePlatform === 'github' ? 'Select discovered teams, map issue tracker projects if you have them, then pull team members from GitHub.' :
+                   'Add teams manually and assign members. You can connect a code platform later to enable auto-discovery.'}
+                  {' '}This is the step that makes the rest of the app useful.
                 </p>
               </div>
             </div>
 
             <div className="mb-6 grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
-              <div className="rounded-3xl border border-slate-800 bg-slate-950/70 p-5">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <p className="text-sm font-semibold text-white">Discovered GitLab groups</p>
-                    <p className="mt-1 text-xs text-slate-500">Select subgroups under the configured base group, or add teams manually.</p>
+              {codePlatform === 'gitlab' ? (
+                <div className="rounded-3xl border border-slate-800 bg-slate-950/70 p-5">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-sm font-semibold text-white">Discovered GitLab groups</p>
+                      <p className="mt-1 text-xs text-slate-500">Select subgroups under the configured base group, or add teams manually.</p>
+                    </div>
+                    {discoveredGroups.length > 0 ? (
+                      <button
+                        type="button"
+                        onClick={addAllDiscoveredTeams}
+                        className="inline-flex items-center gap-2 rounded-2xl border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 text-xs font-medium text-cyan-200 transition-colors hover:border-cyan-400/60 hover:bg-cyan-500/15"
+                      >
+                        <Plus size={12} />
+                        Add all
+                      </button>
+                    ) : null}
                   </div>
-                  {discoveredGroups.length > 0 ? (
-                    <button
-                      type="button"
-                      onClick={addAllDiscoveredTeams}
-                      className="inline-flex items-center gap-2 rounded-2xl border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 text-xs font-medium text-cyan-200 transition-colors hover:border-cyan-400/60 hover:bg-cyan-500/15"
-                    >
-                      <Plus size={12} />
-                      Add all
-                    </button>
+
+                  <label className="mt-4 flex items-center gap-2 rounded-2xl border border-slate-800 bg-slate-900/70 px-3 py-2 text-sm text-slate-400">
+                    <Search size={14} />
+                    <input
+                      value={groupSearch}
+                      onChange={event => setGroupSearch(event.target.value)}
+                      placeholder="Filter by group name or path"
+                      className="w-full bg-transparent text-sm text-white outline-none placeholder:text-slate-600"
+                    />
+                  </label>
+
+                  <div className="mt-4 space-y-3 max-h-[520px] overflow-auto pr-1">
+                    {filteredGroups.length === 0 ? (
+                      <div className="rounded-2xl border border-dashed border-slate-800 px-4 py-8 text-sm text-slate-500">
+                        {discoveredGroups.length === 0
+                          ? 'No GitLab groups discovered yet. Validate connections, then discover teams from the base group.'
+                          : 'No groups match the current filter.'}
+                      </div>
+                    ) : (
+                      filteredGroups.map(group => {
+                        const alreadyAdded = teams.some(team => team.gitlabPath === group.full_path)
+                        return (
+                          <div key={group.id} className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
+                            <div className="flex items-start justify-between gap-4">
+                              <div>
+                                <p className="text-sm font-semibold text-white">{titleFromSlug(group.name) || group.name}</p>
+                                <p className="mt-1 font-mono text-[11px] text-slate-500">{group.full_path}</p>
+                                {group.description ? <p className="mt-2 text-xs leading-5 text-slate-400">{group.description}</p> : null}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => addDiscoveredTeam(group)}
+                                disabled={alreadyAdded}
+                                className="inline-flex shrink-0 items-center gap-2 rounded-2xl border border-slate-700 px-3 py-2 text-xs font-medium text-slate-200 transition-colors hover:border-slate-500 hover:text-white disabled:cursor-not-allowed disabled:border-emerald-500/30 disabled:bg-emerald-500/10 disabled:text-emerald-200"
+                              >
+                                {alreadyAdded ? <Check size={12} /> : <Plus size={12} />}
+                                {alreadyAdded ? 'Added' : 'Add'}
+                              </button>
+                            </div>
+                          </div>
+                        )
+                      })
+                    )}
+                  </div>
+                </div>
+              ) : codePlatform === 'github' ? (
+                <div className="rounded-3xl border border-slate-800 bg-slate-950/70 p-5">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-sm font-semibold text-white">Discovered GitHub teams</p>
+                      <p className="mt-1 text-xs text-slate-500">Teams from {github.org || 'your organization'}.</p>
+                    </div>
+                    {discoveredGithubTeams.length > 0 ? (
+                      <button type="button" onClick={addAllDiscoveredGithubTeams}
+                        className="inline-flex items-center gap-2 rounded-2xl border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 text-xs font-medium text-cyan-200 transition-colors hover:border-cyan-400/60 hover:bg-cyan-500/15">
+                        <Plus size={12} /> Add all
+                      </button>
+                    ) : null}
+                  </div>
+                  <div className="mt-4 space-y-3 max-h-[520px] overflow-auto pr-1">
+                    {discoveringGithubTeams ? (
+                      <div className="flex items-center gap-2 rounded-2xl border border-dashed border-slate-800 px-4 py-8 text-sm text-slate-500">
+                        <Loader2 size={14} className="animate-spin" /> Discovering GitHub teams...
+                      </div>
+                    ) : discoveredGithubTeams.length === 0 ? (
+                      <div className="rounded-2xl border border-dashed border-slate-800 px-4 py-8 text-sm text-slate-500">
+                        No GitHub teams discovered yet. Validate connections, then discover teams.
+                      </div>
+                    ) : (
+                      discoveredGithubTeams.map(team => {
+                        const path = github.org ? `${github.org}/${team.slug}` : team.slug
+                        const alreadyAdded = teams.some(t => t.gitlabPath === path)
+                        return (
+                          <div key={team.slug} className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
+                            <div className="flex items-start justify-between gap-4">
+                              <div>
+                                <p className="text-sm font-semibold text-white">{team.name}</p>
+                                <p className="mt-1 font-mono text-[11px] text-slate-500">{team.slug}</p>
+                                {team.description ? <p className="mt-2 text-xs leading-5 text-slate-400">{team.description}</p> : null}
+                              </div>
+                              <button type="button" onClick={() => addDiscoveredGithubTeam(team)} disabled={alreadyAdded}
+                                className="inline-flex shrink-0 items-center gap-2 rounded-2xl border border-slate-700 px-3 py-2 text-xs font-medium text-slate-200 transition-colors hover:border-slate-500 hover:text-white disabled:cursor-not-allowed disabled:border-emerald-500/30 disabled:bg-emerald-500/10 disabled:text-emerald-200">
+                                {alreadyAdded ? <Check size={12} /> : <Plus size={12} />}
+                                {alreadyAdded ? 'Added' : 'Add'}
+                              </button>
+                            </div>
+                          </div>
+                        )
+                      })
+                    )}
+                  </div>
+                  {githubTeamsError ? (
+                    <div className="mt-3 rounded-2xl border border-rose-500/25 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">{githubTeamsError}</div>
                   ) : null}
                 </div>
-
-                <label className="mt-4 flex items-center gap-2 rounded-2xl border border-slate-800 bg-slate-900/70 px-3 py-2 text-sm text-slate-400">
-                  <Search size={14} />
-                  <input
-                    value={groupSearch}
-                    onChange={event => setGroupSearch(event.target.value)}
-                    placeholder="Filter by group name or path"
-                    className="w-full bg-transparent text-sm text-white outline-none placeholder:text-slate-600"
-                  />
-                </label>
-
-                <div className="mt-4 space-y-3 max-h-[520px] overflow-auto pr-1">
-                  {filteredGroups.length === 0 ? (
-                    <div className="rounded-2xl border border-dashed border-slate-800 px-4 py-8 text-sm text-slate-500">
-                      {discoveredGroups.length === 0
-                        ? 'No GitLab groups discovered yet. Validate connections, then discover teams from the base group.'
-                        : 'No groups match the current filter.'}
-                    </div>
-                  ) : (
-                    filteredGroups.map(group => {
-                      const alreadyAdded = teams.some(team => team.gitlabPath === group.full_path)
-                      return (
-                        <div key={group.id} className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
-                          <div className="flex items-start justify-between gap-4">
-                            <div>
-                              <p className="text-sm font-semibold text-white">{titleFromSlug(group.name) || group.name}</p>
-                              <p className="mt-1 font-mono text-[11px] text-slate-500">{group.full_path}</p>
-                              {group.description ? <p className="mt-2 text-xs leading-5 text-slate-400">{group.description}</p> : null}
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => addDiscoveredTeam(group)}
-                              disabled={alreadyAdded}
-                              className="inline-flex shrink-0 items-center gap-2 rounded-2xl border border-slate-700 px-3 py-2 text-xs font-medium text-slate-200 transition-colors hover:border-slate-500 hover:text-white disabled:cursor-not-allowed disabled:border-emerald-500/30 disabled:bg-emerald-500/10 disabled:text-emerald-200"
-                            >
-                              {alreadyAdded ? <Check size={12} /> : <Plus size={12} />}
-                              {alreadyAdded ? 'Added' : 'Add'}
-                            </button>
-                          </div>
-                        </div>
-                      )
-                    })
-                  )}
+              ) : (
+                <div className="rounded-3xl border border-slate-800 bg-slate-950/70 p-5">
+                  <p className="text-sm font-semibold text-white">No code platform connected</p>
+                  <p className="mt-2 text-xs text-slate-500">Auto-discovery requires a code platform (GitLab or GitHub). Add teams manually using the panel on the right.</p>
                 </div>
-              </div>
+              )}
 
               <div className="rounded-3xl border border-slate-800 bg-slate-950/70 p-5">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <p className="text-sm font-semibold text-white">Configured teams</p>
-                    <p className="mt-1 text-xs text-slate-500">Every team needs a name, slug, and GitLab path before the wizard can create the domain.</p>
+                    <p className="mt-1 text-xs text-slate-500">Every team needs a name and slug. {codePlatform !== 'none' ? 'A code platform path enables auto-discovery.' : 'Add teams manually since no code platform is connected.'}</p>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <button
@@ -1716,7 +1881,13 @@ export default function Setup({ onComplete, isNewDomain = false }: SetupProps) {
                           projectOptions={discoveredProjects}
                           onChange={nextTeam => updateTeam(index, nextTeam)}
                           onRemove={() => setTeams(current => current.filter((_, teamIndex) => teamIndex !== index))}
-                          onDiscoverMembers={() => void discoverMembersForTeam(index)}
+                          onDiscoverMembers={() => {
+                            if (codePlatform === 'github') {
+                              void discoverGithubMembersForTeam(index)
+                            } else {
+                              void discoverMembersForTeam(index)
+                            }
+                          }}
                           discoveringMembers={Boolean(memberLoading[key])}
                           memberError={memberErrors[key]}
                         />
