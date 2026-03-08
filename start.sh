@@ -16,7 +16,7 @@ if [ "$has_config" = false ]; then
   echo "  The setup wizard will guide you through configuration."
   echo ""
   echo "  Option A: Run the wizard (recommended)"
-  echo "    → Open http://localhost:5173 after startup"
+  echo "    → Open http://localhost:5174 after startup"
   echo ""
   echo "  Option B: Copy the example config manually"
   echo "    cp config/organization.example.yaml config/organization.yaml"
@@ -52,12 +52,12 @@ if [ -d "frontend" ] && [ ! -d "frontend/node_modules" ]; then
 fi
 
 echo "Starting Engineering Director Dashboard..."
-echo "  Backend:  http://localhost:9001"
-echo "  Frontend: http://localhost:5173"
+echo "  Backend:  http://localhost:9002"
+echo "  Frontend: http://localhost:5174"
 echo ""
 
 # Start backend from project root so "backend.*" is the only valid import path
-(uv run uvicorn backend.main:app --host 0.0.0.0 --port 9001 --reload 2>&1 | sed 's/^/[backend] /') &
+(uv run uvicorn backend.main:app --host 0.0.0.0 --port 9002 --reload 2>&1 | sed 's/^/[backend] /') &
 BACKEND_PID=$!
 
 # Start frontend if it exists
@@ -69,9 +69,9 @@ fi
 # Open browser after a short delay
 sleep 2
 if command -v open &> /dev/null; then
-  open http://localhost:5173
+  open http://localhost:5174
 elif command -v xdg-open &> /dev/null; then
-  xdg-open http://localhost:5173
+  xdg-open http://localhost:5174
 fi
 
 # Wait for Ctrl+C and clean up

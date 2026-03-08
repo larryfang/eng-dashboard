@@ -32,7 +32,7 @@ cp .env.example .env
 # 4. Start the dashboard
 ./start.sh
 
-# 5. Open http://localhost:5173
+# 5. Open http://localhost:5174
 #    Complete the setup wizard, or edit organization.yaml directly
 ```
 
@@ -130,7 +130,7 @@ SNYK_TOKEN=...
 
 ## API Endpoints
 
-The backend runs on port 9001. Key endpoints:
+The backend runs on port 9002. Key endpoints:
 
 ```
 GET  /api/config                  Get current organization config
@@ -154,7 +154,7 @@ GET  /api/port/status             Port connection status
 
 ```bash
 # Backend only
-uv run uvicorn backend.main:app --port 9001 --reload
+uv run uvicorn backend.main:app --port 9002 --reload
 
 # Frontend only
 cd frontend && npm run dev
@@ -169,7 +169,7 @@ The dashboard needs an initial sync to populate metrics:
 
 ```bash
 # Quick 30-day sync
-curl -X POST "http://localhost:9001/api/gitlab/sync?days=30&background=false"
+curl -X POST "http://localhost:9002/api/gitlab/sync?days=30&background=false"
 
 # Or via the dashboard: click "Sync" button in the Teams view
 ```
@@ -181,7 +181,7 @@ curl -X POST "http://localhost:9001/api/gitlab/sync?days=30&background=false"
 ```
 eng-dashboard/
 ├── backend/
-│   ├── main.py                     FastAPI app (port 9001)
+│   ├── main.py                     FastAPI app (port 9002)
 │   ├── database.py                 SQLite models (GitLabMetrics, JiraIssue, etc.)
 │   ├── core/
 │   │   └── config_loader.py        Loads organization.yaml → typed config
@@ -208,7 +208,7 @@ eng-dashboard/
 │   │   │   ├── Dora.tsx            DORA charts
 │   │   │   └── Services.tsx        Port service catalog
 │   │   └── components/             Shared UI components
-│   └── vite.config.ts              Proxy /api → localhost:9001
+│   └── vite.config.ts              Proxy /api → localhost:9002
 ├── config/
 │   ├── organization.yaml           Your config (gitignored)
 │   └── organization.example.yaml   Template to copy
@@ -255,7 +255,7 @@ On first startup the app automatically:
 If you add or update engineers/teams in `organization.yaml`:
 
 ```bash
-curl -X POST http://localhost:9001/api/config/domain/seed
+curl -X POST http://localhost:9002/api/config/domain/seed
 ```
 
 ### Domain DB Tables

@@ -4,8 +4,8 @@
 
 React + FastAPI dashboard for tracking GitLab activity, Jira tickets, DORA metrics, and Port service catalog across engineering teams.
 
-- **Frontend**: React/Vite on port 5173
-- **Backend**: FastAPI on port 9001
+- **Frontend**: React/Vite on port 5174
+- **Backend**: FastAPI on port 9002
 - **Package manager**: uv (backend), npm (frontend)
 
 ## Architecture

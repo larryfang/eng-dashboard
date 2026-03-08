@@ -2,7 +2,7 @@ services:
   dashboard:
     build: .
     ports:
-      - "9001:9001"
+      - "9002:9002"
     volumes:
       - ./data:/app/data
       - ./config:/app/config

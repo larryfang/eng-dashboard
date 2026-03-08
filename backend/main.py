@@ -1,6 +1,6 @@
 """
 Engineering Director Dashboard — Backend
-Port: 9001
+Port: 9002
 """
 
 from fastapi import FastAPI
@@ -65,13 +65,13 @@ async def lifespan(app: FastAPI):
 
     from backend.services.domain_registry import get_active_slug
     logger.info(f"Active domain: {get_active_slug()}")
-    logger.info("Engineering Director Dashboard started on port 9001")
+    logger.info("Engineering Director Dashboard started on port 9002")
 
     # Warn if no domains are configured yet
     if not list_domain_slugs():
         logger.warning("=" * 60)
         logger.warning("No domain config found in config/domains/!")
-        logger.warning("Open http://localhost:5173 to complete the setup wizard.")
+        logger.warning("Open http://localhost:5174 to complete the setup wizard.")
         logger.warning("=" * 60)
 
     # Start background sync scheduler
@@ -95,8 +95,8 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5174",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -163,4 +163,4 @@ async def health():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("backend.main:app", host="0.0.0.0", port=9001, reload=True)
+    uvicorn.run("backend.main:app", host="0.0.0.0", port=9002, reload=True)

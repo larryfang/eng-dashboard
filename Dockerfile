@@ -1,5 +1,5 @@
 # Multi-stage build: node frontend → python backend
-# Usage: docker build -t sinch-pa . && docker run -p 9001:9001 sinch-pa
+# Usage: docker build -t sinch-pa . && docker run -p 9002:9002 sinch-pa
 
 # ── Stage 1: Build frontend ──────────────────────────────────────────────────
 FROM node:20-alpine AS frontend-build
@@ -33,7 +33,7 @@ COPY --from=frontend-build /app/frontend/dist ./frontend/dist
 RUN mkdir -p data/domains
 
 # Expose port
-EXPOSE 9001
+EXPOSE 9002
 
 # Run with uvicorn
-CMD ["uv", "run", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "9001"]
+CMD ["uv", "run", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "9002"]
