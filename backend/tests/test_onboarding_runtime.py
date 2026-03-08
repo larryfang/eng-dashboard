@@ -1,3 +1,4 @@
+import json
 import sys
 from pathlib import Path
 
@@ -14,6 +15,7 @@ if str(BACKEND) not in sys.path:
 from backend.config import gitlab_teams  # noqa: E402
 from backend.core import config_loader  # noqa: E402
 from backend.routers import onboard_router  # noqa: E402
+from backend.services import domain_credentials  # noqa: E402
 from backend.services import domain_registry  # noqa: E402
 
 
@@ -298,3 +300,40 @@ def test_get_config_tracks_active_domain_and_refreshes_gitlab_team_cache(tmp_pat
     beta_config = config_loader.get_config()
     assert beta_config.slug == "beta"
     assert gitlab_teams.TEAM_GITLAB_PATHS["beta"] == ["acme/platform/beta"]
+
+
+def test_get_github_settings_reads_from_secrets(tmp_path, monkeypatch):
+    secrets_file = tmp_path / "test-domain.secrets.json"
+    secrets_file.write_text(json.dumps({"github": {"token": "ghp_123", "org": "acme"}}))
+    monkeypatch.setattr(domain_credentials, "DOMAIN_DATA_DIR", tmp_path)
+    monkeypatch.setattr(domain_credentials, "_slug", lambda s: "test-domain")
+    result = domain_credentials.get_github_settings("test-domain")
+    assert result["token"] == "ghp_123"
+    assert result["org"] == "acme"
+
+
+def test_get_linear_settings_reads_from_secrets(tmp_path, monkeypatch):
+    secrets_file = tmp_path / "test-domain.secrets.json"
+    secrets_file.write_text(json.dumps({"linear": {"api_key": "lin_abc"}}))
+    monkeypatch.setattr(domain_credentials, "DOMAIN_DATA_DIR", tmp_path)
+    monkeypatch.setattr(domain_credentials, "_slug", lambda s: "test-domain")
+    result = domain_credentials.get_linear_settings("test-domain")
+    assert result["api_key"] == "lin_abc"
+
+
+def test_get_monday_settings_reads_from_secrets(tmp_path, monkeypatch):
+    secrets_file = tmp_path / "test-domain.secrets.json"
+    secrets_file.write_text(json.dumps({"monday": {"token": "mon_xyz"}}))
+    monkeypatch.setattr(domain_credentials, "DOMAIN_DATA_DIR", tmp_path)
+    monkeypatch.setattr(domain_credentials, "_slug", lambda s: "test-domain")
+    result = domain_credentials.get_monday_settings("test-domain")
+    assert result["token"] == "mon_xyz"
+
+
+def test_get_asana_settings_reads_from_secrets(tmp_path, monkeypatch):
+    secrets_file = tmp_path / "test-domain.secrets.json"
+    secrets_file.write_text(json.dumps({"asana": {"token": "asana_abc"}}))
+    monkeypatch.setattr(domain_credentials, "DOMAIN_DATA_DIR", tmp_path)
+    monkeypatch.setattr(domain_credentials, "_slug", lambda s: "test-domain")
+    result = domain_credentials.get_asana_settings("test-domain")
+    assert result["token"] == "asana_abc"
