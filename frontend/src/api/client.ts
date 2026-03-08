@@ -193,6 +193,33 @@ export interface PortStatusResponse {
 }
 
 export const getGitLabHealth = () => api.get<GitLabHealthResponse>('/gitlab/health')
+
+// LLM / AI Provider
+export interface LLMProviderInfo {
+  configured: boolean
+  model: string
+  model_display: string
+  description: string
+}
+
+export interface LLMStatusResponse {
+  anthropic: LLMProviderInfo
+  openai: LLMProviderInfo
+  active_provider: string | null
+  mode: string
+}
+
+export interface LLMSaveResponse {
+  anthropic?: { ok: boolean; model: string | null; error: string | null }
+  openai?: { ok: boolean; model: string | null; error: string | null }
+  status: LLMStatusResponse
+}
+
+export const getLLMStatus = () => api.get<LLMStatusResponse>('/config/llm')
+export const saveLLMKeys = (keys: { anthropic_api_key?: string; openai_api_key?: string }) =>
+  api.post<LLMSaveResponse>('/config/llm', keys)
+export const removeLLMKeys = (provider: 'anthropic' | 'openai' | 'all' = 'all') =>
+  api.delete<{ removed: string; status: LLMStatusResponse }>('/config/llm', { params: { provider } })
 export const getPortStatus = () => api.get<PortStatusResponse>('/port/status')
 export interface MergeRequestActivityItem {
   id: string

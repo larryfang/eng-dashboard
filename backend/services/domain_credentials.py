@@ -126,3 +126,27 @@ def get_snyk_settings(domain_slug: str | None = None) -> dict[str, str]:
             or os.getenv("SNYK_TOKEN", "")
         ),
     }
+
+
+def get_llm_settings(domain_slug: str | None = None) -> dict[str, str]:
+    """Get LLM API keys — domain secrets take priority over env vars."""
+    secrets = load_domain_secrets(domain_slug).get("llm", {}) or {}
+    return {
+        "anthropic_api_key": secrets.get("anthropic_api_key") or os.getenv("ANTHROPIC_API_KEY", ""),
+        "openai_api_key": secrets.get("openai_api_key") or os.getenv("OPENAI_API_KEY", ""),
+    }
+
+
+def save_llm_settings(domain_slug: str | None = None, **keys: str) -> None:
+    """Save LLM API keys to domain secrets. Pass empty string to remove a key."""
+    slug = _slug(domain_slug)
+    current = load_domain_secrets(slug)
+    llm = current.get("llm", {}) or {}
+    for k, v in keys.items():
+        if v:
+            llm[k] = v
+        else:
+            llm.pop(k, None)
+    current["llm"] = llm
+    path = get_domain_secret_path(slug)
+    path.write_text(json.dumps(current, indent=2, sort_keys=True), encoding="utf-8")

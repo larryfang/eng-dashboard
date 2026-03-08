@@ -18,7 +18,7 @@ import requests
 import yaml
 from fastapi import APIRouter, HTTPException, Query
 
-from backend.services.domain_credentials import get_gitlab_settings, get_jira_settings, get_port_settings
+from backend.services.domain_credentials import get_gitlab_settings, get_jira_settings, get_port_settings, save_llm_settings
 
 logger = logging.getLogger(__name__)
 
@@ -378,3 +378,97 @@ async def validate_connections():
         }
 
     return results
+
+
+# ==================== LLM / AI Provider Endpoints ====================
+
+@router.get("/llm")
+async def get_llm_config():
+    """Return current LLM provider status and model info (no secrets exposed)."""
+    from backend.services.llm_helpers import get_llm_status
+    return get_llm_status()
+
+
+@router.post("/llm")
+async def save_llm_keys(body: dict):
+    """Save and validate LLM API keys.
+
+    Body: { "anthropic_api_key": "sk-ant-...", "openai_api_key": "sk-..." }
+    Either or both keys can be provided. Empty string removes a key.
+    """
+    anthropic_key = body.get("anthropic_api_key")
+    openai_key = body.get("openai_api_key")
+
+    if anthropic_key is None and openai_key is None:
+        raise HTTPException(status_code=422, detail="Provide at least one API key")
+
+    results: dict = {}
+
+    # Validate Anthropic key if provided (non-empty)
+    if anthropic_key:
+        try:
+            from anthropic import Anthropic
+            client = Anthropic(api_key=anthropic_key)
+            resp = client.messages.create(
+                model="claude-haiku-4-5-20251001",
+                max_tokens=10,
+                messages=[{"role": "user", "content": "Hi"}],
+            )
+            results["anthropic"] = {"ok": True, "model": resp.model, "error": None}
+        except Exception as exc:
+            results["anthropic"] = {"ok": False, "model": None, "error": str(exc)[:200]}
+
+    # Validate OpenAI key if provided (non-empty)
+    if openai_key:
+        try:
+            from openai import OpenAI
+            client = OpenAI(api_key=openai_key)
+            resp = client.chat.completions.create(
+                model="gpt-4o-mini",
+                max_tokens=10,
+                messages=[{"role": "user", "content": "Hi"}],
+            )
+            results["openai"] = {"ok": True, "model": resp.model, "error": None}
+        except Exception as exc:
+            results["openai"] = {"ok": False, "model": None, "error": str(exc)[:200]}
+
+    # Only save keys that validated successfully (or empty to remove)
+    keys_to_save: dict[str, str] = {}
+    if anthropic_key is not None:
+        if anthropic_key == "" or results.get("anthropic", {}).get("ok"):
+            keys_to_save["anthropic_api_key"] = anthropic_key
+        elif not results.get("anthropic", {}).get("ok"):
+            # Key was provided but failed validation — don't save, report error
+            pass
+    if openai_key is not None:
+        if openai_key == "" or results.get("openai", {}).get("ok"):
+            keys_to_save["openai_api_key"] = openai_key
+        elif not results.get("openai", {}).get("ok"):
+            pass
+
+    if keys_to_save:
+        save_llm_settings(**keys_to_save)
+        # Reset cached provider so it picks up the new keys
+        from backend.services.llm_helpers import reset_llm_plugin
+        reset_llm_plugin()
+
+    from backend.services.llm_helpers import get_llm_status
+    return {**results, "status": get_llm_status()}
+
+
+@router.delete("/llm")
+async def remove_llm_keys(provider: str = Query(default="all", description="Provider to remove: anthropic, openai, or all")):
+    """Remove stored LLM API keys."""
+    keys: dict[str, str] = {}
+    if provider in ("anthropic", "all"):
+        keys["anthropic_api_key"] = ""
+    if provider in ("openai", "all"):
+        keys["openai_api_key"] = ""
+    if not keys:
+        raise HTTPException(status_code=422, detail="Invalid provider. Use: anthropic, openai, or all")
+
+    save_llm_settings(**keys)
+    from backend.services.llm_helpers import reset_llm_plugin
+    reset_llm_plugin()
+    from backend.services.llm_helpers import get_llm_status
+    return {"removed": provider, "status": get_llm_status()}
