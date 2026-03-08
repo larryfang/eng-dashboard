@@ -1,0 +1,219 @@
+# =============================================================================
+# Engineering Director Dashboard — DEMO Configuration
+# =============================================================================
+# This is a fictional company used to demonstrate the dashboard.
+# Run: uv run python scripts/generate_demo.py
+# =============================================================================
+
+organization:
+  name: Nexus Technologies
+  slug: nexus-tech
+  description: Cloud platform & developer tools
+  atlassian_cloud_id: "demo-cloud-id"
+  atlassian_site_url: https://nexus-tech.atlassian.net
+  jira_roadmap_url: ""
+
+user:
+  name: Morgan Hayes
+  email: morgan.hayes@nexus-tech.io
+  role: Director of Engineering
+  timezone: America/Los_Angeles
+
+# =============================================================================
+# Teams — 4 squads with distinct performance profiles
+# =============================================================================
+
+teams:
+  - key: ATLAS
+    name: Platform Infrastructure
+    slug: atlas
+    scrum_name: Atlas
+    aliases:
+      - platform
+    lead: Sarah Chen
+    lead_email: sarah.chen@nexus-tech.io
+    headcount: 5
+    effective_engineers: 5
+    products:
+      - Cloud Platform
+      - CI/CD Pipeline
+      - Internal Developer Tools
+    jira_project: ATLAS
+    gitlab_path: nexus/platform/core
+    additional_gitlab_paths:
+      - nexus/platform/infra
+    gitlab_members:
+      - username: sarah.chen
+        name: Sarah Chen
+        role: TL
+      - username: alex.kumar
+        name: Alex Kumar
+        role: senior
+      - username: lisa.park
+        name: Lisa Park
+        role: engineer
+      - username: tom.wilson
+        name: Tom Wilson
+        role: engineer
+      - username: nina.volkov
+        name: Nina Volkov
+        role: engineer
+
+  - key: HRZ
+    name: Product Frontend
+    slug: horizon
+    scrum_name: Horizon
+    aliases:
+      - frontend
+    lead: Marcus Rivera
+    lead_email: marcus.rivera@nexus-tech.io
+    headcount: 4
+    effective_engineers: 4
+    products:
+      - Customer Dashboard
+      - Design System
+      - Mobile Web
+    jira_project: HRZ
+    gitlab_path: nexus/frontend/web
+    additional_gitlab_paths:
+      - nexus/frontend/design-system
+    gitlab_members:
+      - username: marcus.rivera
+        name: Marcus Rivera
+        role: TL
+      - username: emma.jones
+        name: Emma Jones
+        role: senior
+      - username: kai.tanaka
+        name: Kai Tanaka
+        role: engineer
+      - username: sofia.reyes
+        name: Sofia Reyes
+        role: engineer
+
+  - key: FRG
+    name: Core API Services
+    slug: forge
+    scrum_name: Forge
+    aliases:
+      - api
+      - backend
+    lead: Priya Patel
+    lead_email: priya.patel@nexus-tech.io
+    headcount: 5
+    effective_engineers: 4
+    products:
+      - REST API Gateway
+      - Authentication Service
+      - Billing Engine
+    jira_project: FRG
+    gitlab_path: nexus/services/api
+    additional_gitlab_paths:
+      - nexus/services/auth
+      - nexus/services/billing
+    gitlab_members:
+      - username: priya.patel
+        name: Priya Patel
+        role: TL
+      - username: david.kim
+        name: David Kim
+        role: senior
+      - username: rachel.green
+        name: Rachel Green
+        role: engineer
+      - username: omar.hassan
+        name: Omar Hassan
+        role: engineer
+      - username: yuki.sato
+        name: Yuki Sato
+        role: qa
+        exclude_from_metrics: true
+
+  - key: SNT
+    name: Security & DevOps
+    slug: sentinel
+    scrum_name: Sentinel
+    aliases:
+      - security
+      - devops
+    lead: James Okonkwo
+    lead_email: james.okonkwo@nexus-tech.io
+    headcount: 4
+    effective_engineers: 3
+    products:
+      - Security Scanner
+      - Infrastructure as Code
+      - Monitoring Stack
+    jira_project: SNT
+    gitlab_path: nexus/security
+    additional_gitlab_paths:
+      - nexus/infra/terraform
+    gitlab_members:
+      - username: james.okonkwo
+        name: James Okonkwo
+        role: TL
+      - username: anna.schmidt
+        name: Anna Schmidt
+        role: senior
+      - username: leo.garcia
+        name: Leo Garcia
+        role: engineer
+      - username: mei.lin
+        name: Mei Lin
+        role: engineer
+        departed: true
+
+# =============================================================================
+# Integrations
+# =============================================================================
+
+integrations:
+  issue_tracker:
+    provider: jira
+    config: {}
+
+  code_platform:
+    provider: gitlab
+    config:
+      excluded_authors:
+        - renovate-bot
+        - dependabot
+        - gitlab-ci
+
+# =============================================================================
+# Metrics Configuration
+# =============================================================================
+
+metrics:
+  cache_ttl_hours: 24
+  stale_epic_days: 7
+  dora_targets:
+    deploy_frequency_per_week: 15
+    lead_time_hours: 24
+    change_failure_rate: 0.05
+    mttr_hours: 1
+
+# =============================================================================
+# Stakeholders
+# =============================================================================
+
+stakeholders:
+  - name: Dana Rodriguez
+    role: VP Engineering
+    email: dana.rodriguez@nexus-tech.io
+    title: VP of Engineering
+    importance: critical
+    relationship: upward
+  - name: Chris Park
+    role: CTO
+    email: chris.park@nexus-tech.io
+    title: Chief Technology Officer
+    importance: critical
+    relationship: upward
+
+knowledge_base:
+  - "Atlas team owns the CI/CD infrastructure and cloud platform"
+  - "Horizon team maintains the customer-facing dashboard and design system"
+  - "Forge team owns the core API gateway and authentication services"
+  - "Sentinel team handles security scanning and infrastructure as code"
+  - "Mei Lin departed the Sentinel team in January 2026"
