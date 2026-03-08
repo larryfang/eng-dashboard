@@ -207,7 +207,7 @@ def _parse_dt(s: str | None):
 **Step 2: Verify it's importable**
 
 ```bash
-cd /Users/larfan/Projects/sinch-pa
+cd /path/to/eng-dashboard
 uv run python -c "from backend.services.jira_epics_sync_service import sync_jira_epics; print('OK')"
 ```
 Expected: `OK`

@@ -105,7 +105,7 @@ if _legacy.exists() and not any(_domains_dir.glob("*.yaml")):
 
 Run the backend and check logs show migration message:
 ```bash
-cd /Users/larfan/Projects/sinch-pa
+cd /path/to/eng-dashboard
 uv run uvicorn backend.main:app --port 9001 --app-dir backend
 ```
 Expected log: `Migrated organization.yaml → config/domains/sinch-ecosystem.yaml`

@@ -61,6 +61,7 @@ orgs/
 data/domains/*.db
 data/domains/*.db-shm
 data/domains/*.db-wal
+data/domains/*.secrets.json
 
 # ── Misc ─────────────────────────────────────────────────────────────────────
 *.bak
