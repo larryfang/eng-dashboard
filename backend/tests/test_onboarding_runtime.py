@@ -206,6 +206,49 @@ async def test_discover_gitlab_members_uses_members_all_endpoint(monkeypatch):
     assert calls[0] == "https://gitlab.example.internal/api/v4/groups/acme%2Fplatform%2Fteam-alpha/members/all"
 
 
+@pytest.mark.asyncio
+async def test_discover_github_orgs(monkeypatch):
+    def fake_get(url, headers=None, params=None, timeout=0):
+        return StubResponse(payload=[
+            {"login": "my-org", "description": "Main org"},
+            {"login": "side-project", "description": ""},
+        ])
+    monkeypatch.setattr(onboard_router.requests, "get", fake_get)
+    result = await onboard_router.discover_github_orgs(
+        StubRequest(headers={"x-github-token": "ghp_test"}), token=None,
+    )
+    assert len(result["orgs"]) == 2
+    assert result["orgs"][0]["login"] == "my-org"
+
+
+@pytest.mark.asyncio
+async def test_discover_github_teams(monkeypatch):
+    def fake_get(url, headers=None, params=None, timeout=0):
+        return StubResponse(payload=[
+            {"slug": "platform", "name": "Platform", "description": "Core infra"},
+        ])
+    monkeypatch.setattr(onboard_router.requests, "get", fake_get)
+    result = await onboard_router.discover_github_teams(
+        StubRequest(headers={"x-github-token": "ghp_test"}), token=None, org="my-org",
+    )
+    assert len(result["teams"]) == 1
+    assert result["teams"][0]["slug"] == "platform"
+
+
+@pytest.mark.asyncio
+async def test_discover_github_team_members(monkeypatch):
+    def fake_get(url, headers=None, params=None, timeout=0):
+        return StubResponse(payload=[
+            {"login": "alice", "type": "User"},
+        ])
+    monkeypatch.setattr(onboard_router.requests, "get", fake_get)
+    result = await onboard_router.discover_github_members(
+        StubRequest(headers={"x-github-token": "ghp_test"}), token=None, org="my-org", team_slug="platform",
+    )
+    assert len(result["members"]) == 1
+    assert result["members"][0]["username"] == "alice"
+
+
 def test_get_config_tracks_active_domain_and_refreshes_gitlab_team_cache(tmp_path, monkeypatch):
     domains_dir = tmp_path / "domains"
     domains_dir.mkdir(parents=True, exist_ok=True)

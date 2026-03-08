@@ -8,6 +8,9 @@ POST /api/onboard/validate                  → test GitLab + Jira creds
 GET  /api/onboard/discover/gitlab-groups    → list subgroups under a GitLab group path
 GET  /api/onboard/discover/jira-projects    → list Jira projects for a site
 GET  /api/onboard/discover/gitlab-members   → list members of a GitLab group
+GET  /api/onboard/discover/github-orgs      → list GitHub orgs for a token
+GET  /api/onboard/discover/github-teams     → list teams in a GitHub org
+GET  /api/onboard/discover/github-members   → list members of a GitHub team
 POST /api/onboard/create                    → save new domain config + init DB + seed
 """
 import logging
@@ -23,6 +26,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/onboard", tags=["onboard"])
 
 DEFAULT_GITLAB_URL = "https://gitlab.com"
+GITHUB_API = "https://api.github.com"
 CONFIG_DOMAINS_DIR = Path(__file__).resolve().parent.parent.parent / "config" / "domains"
 
 
@@ -407,6 +411,132 @@ def _access_to_role(level: int) -> str:
     if level >= 30:
         return "engineer"  # Developer
     return "observer"
+
+
+# ── GitHub org discovery ──────────────────────────────────────────────────────
+
+@router.get("/discover/github-orgs")
+async def discover_github_orgs(
+    request: Request,
+    token: Optional[str] = Query(default=None, description="GitHub personal access token"),
+):
+    """List GitHub organizations the token owner belongs to."""
+    token = request.headers.get("x-github-token") or token
+    if not token:
+        raise HTTPException(status_code=400, detail="GitHub token is required")
+
+    try:
+        r = requests.get(
+            f"{GITHUB_API}/user/orgs",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/vnd.github+json",
+            },
+            params={"per_page": 100},
+            timeout=15,
+        )
+        if not r.ok:
+            raise HTTPException(
+                status_code=r.status_code,
+                detail=f"GitHub org discovery failed: HTTP {r.status_code}",
+            )
+        orgs = [
+            {"login": o["login"], "description": o.get("description", "") or ""}
+            for o in r.json()
+        ]
+        return {"orgs": orgs}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── GitHub team discovery ─────────────────────────────────────────────────────
+
+@router.get("/discover/github-teams")
+async def discover_github_teams(
+    request: Request,
+    token: Optional[str] = Query(default=None, description="GitHub personal access token"),
+    org: str = Query(..., description="GitHub organization login"),
+):
+    """List teams in a GitHub organization."""
+    token = request.headers.get("x-github-token") or token
+    if not token:
+        raise HTTPException(status_code=400, detail="GitHub token is required")
+
+    try:
+        r = requests.get(
+            f"{GITHUB_API}/orgs/{org}/teams",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/vnd.github+json",
+            },
+            params={"per_page": 100},
+            timeout=15,
+        )
+        if not r.ok:
+            raise HTTPException(
+                status_code=r.status_code,
+                detail=f"GitHub team discovery failed for {org}: HTTP {r.status_code}",
+            )
+        teams = [
+            {
+                "slug": t["slug"],
+                "name": t["name"],
+                "description": t.get("description", "") or "",
+            }
+            for t in r.json()
+        ]
+        return {"teams": teams}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── GitHub team member discovery ──────────────────────────────────────────────
+
+@router.get("/discover/github-members")
+async def discover_github_members(
+    request: Request,
+    token: Optional[str] = Query(default=None, description="GitHub personal access token"),
+    org: str = Query(..., description="GitHub organization login"),
+    team_slug: str = Query(..., description="GitHub team slug"),
+):
+    """List members of a GitHub team. Returns [{username, name, role}]."""
+    token = request.headers.get("x-github-token") or token
+    if not token:
+        raise HTTPException(status_code=400, detail="GitHub token is required")
+
+    try:
+        r = requests.get(
+            f"{GITHUB_API}/orgs/{org}/teams/{team_slug}/members",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/vnd.github+json",
+            },
+            params={"per_page": 100},
+            timeout=15,
+        )
+        if not r.ok:
+            raise HTTPException(
+                status_code=r.status_code,
+                detail=f"GitHub member discovery failed for {org}/{team_slug}: HTTP {r.status_code}",
+            )
+        members = [
+            {
+                "username": m["login"],
+                "name": m["login"],  # GitHub members API doesn't return display name
+                "role": "engineer",
+            }
+            for m in r.json()
+            if m.get("type") == "User"
+        ]
+        return {"members": members}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ── Create domain ──────────────────────────────────────────────────────────────
