@@ -63,6 +63,33 @@ interface OptionalForm {
   snykToken: string
 }
 
+type CodePlatform = 'none' | 'gitlab' | 'github'
+type IssueTracker = 'none' | 'jira' | 'linear' | 'monday' | 'asana'
+type AiProvider = 'none' | 'openai' | 'anthropic'
+type SecurityProvider = 'none' | 'snyk'
+
+interface GitHubForm {
+  token: string
+  org: string
+}
+
+interface LinearForm {
+  apiKey: string
+}
+
+interface MondayForm {
+  token: string
+}
+
+interface AsanaForm {
+  token: string
+}
+
+interface AiForm {
+  openaiKey: string
+  anthropicKey: string
+}
+
 interface Member {
   username: string
   name: string
@@ -83,7 +110,14 @@ interface TeamForm {
 
 interface ValidationResult {
   gitlab?: { ok: boolean; user?: string; error?: string } | null
+  github?: { ok: boolean; user?: string; error?: string } | null
   jira?: { ok: boolean; user?: string; error?: string } | null
+  linear?: { ok: boolean; user?: string; error?: string } | null
+  monday?: { ok: boolean; user?: string; error?: string } | null
+  asana?: { ok: boolean; user?: string; error?: string } | null
+  openai?: { ok: boolean; user?: string; error?: string } | null
+  anthropic?: { ok: boolean; user?: string; error?: string } | null
+  snyk?: { ok: boolean; user?: string; error?: string } | null
 }
 
 interface GitLabGroup {
@@ -114,7 +148,7 @@ interface SyncScheduleResponse {
 
 const STEPS: Array<{ key: Exclude<Step, 'syncing'>; label: string; hint: string }> = [
   { key: 'basics', label: 'Basics', hint: 'Name the domain and owner' },
-  { key: 'connections', label: 'Connections', hint: 'Validate GitLab and Jira' },
+  { key: 'connections', label: 'Connections', hint: 'Connect your tools (all optional)' },
   { key: 'teams', label: 'Teams', hint: 'Discover squads and members' },
   { key: 'review', label: 'Review', hint: 'Create and start syncing' },
 ]
@@ -537,6 +571,15 @@ export default function Setup({ onComplete, isNewDomain = false }: SetupProps) {
     portBaseUrl: 'https://api.getport.io',
     snykToken: '',
   })
+  const [codePlatform, setCodePlatform] = useState<CodePlatform>('none')
+  const [issueTracker, setIssueTracker] = useState<IssueTracker>('none')
+  const [aiProvider, setAiProvider] = useState<AiProvider>('none')
+  const [securityProvider, setSecurityProvider] = useState<SecurityProvider>('none')
+  const [github, setGithub] = useState<GitHubForm>({ token: '', org: '' })
+  const [linear, setLinear] = useState<LinearForm>({ apiKey: '' })
+  const [monday, setMonday] = useState<MondayForm>({ token: '' })
+  const [asana, setAsana] = useState<AsanaForm>({ token: '' })
+  const [ai, setAi] = useState<AiForm>({ openaiKey: '', anthropicKey: '' })
   const [validation, setValidation] = useState<ValidationResult | null>(null)
   const [validating, setValidating] = useState(false)
   const [advancedOpen, setAdvancedOpen] = useState(false)
@@ -567,7 +610,7 @@ export default function Setup({ onComplete, isNewDomain = false }: SetupProps) {
 
   useEffect(() => {
     setValidation(null)
-  }, [gitlab.token, gitlab.url, jira.url, jira.email, jira.token])
+  }, [codePlatform, issueTracker, aiProvider, securityProvider, gitlab.token, gitlab.url, github.token, jira.url, jira.email, jira.token, linear.apiKey, monday.token, asana.token, ai.openaiKey, ai.anthropicKey, optional.snykToken])
 
   useEffect(() => {
     setDiscoveredGroups([])
@@ -582,7 +625,18 @@ export default function Setup({ onComplete, isNewDomain = false }: SetupProps) {
   const teamKey = (team: TeamForm, index: number) => team.slug || team.gitlabPath || `team-${index}`
 
   const jiraFullyConfigured = Boolean(jira.url.trim() && jira.email.trim() && jira.token.trim())
-  const jiraPartiallyConfigured = [jira.url, jira.email, jira.token].some(Boolean) && !jiraFullyConfigured
+
+  const hasAnyConnection = Boolean(
+    (codePlatform === 'gitlab' && gitlab.token.trim()) ||
+    (codePlatform === 'github' && github.token.trim()) ||
+    (issueTracker === 'jira' && jiraFullyConfigured) ||
+    (issueTracker === 'linear' && linear.apiKey.trim()) ||
+    (issueTracker === 'monday' && monday.token.trim()) ||
+    (issueTracker === 'asana' && asana.token.trim()) ||
+    (aiProvider === 'openai' && ai.openaiKey.trim()) ||
+    (aiProvider === 'anthropic' && ai.anthropicKey.trim()) ||
+    (securityProvider === 'snyk' && optional.snykToken.trim())
+  )
 
   const filteredGroups = useMemo(() => {
     const query = groupSearch.trim().toLowerCase()
@@ -593,7 +647,7 @@ export default function Setup({ onComplete, isNewDomain = false }: SetupProps) {
   }, [discoveredGroups, groupSearch])
 
   const incompleteTeams = useMemo(
-    () => teams.filter(team => !team.name.trim() || !team.slug.trim() || !team.gitlabPath.trim()),
+    () => teams.filter(team => !team.name.trim() || !team.slug.trim()),
     [teams],
   )
   const teamsWithoutMembers = useMemo(
@@ -603,30 +657,25 @@ export default function Setup({ onComplete, isNewDomain = false }: SetupProps) {
 
   const reviewWarnings = useMemo(() => {
     const warnings: string[] = []
-    if (!jiraFullyConfigured) {
-      warnings.push('Jira is not connected. Epic health, drill-through, and roadmap views will stay limited until Jira credentials are added.')
+    if (codePlatform === 'none') {
+      warnings.push('No code platform connected. Engineer activity and MR metrics will be unavailable.')
+    }
+    if (issueTracker === 'none') {
+      warnings.push('No issue tracker connected. Epic health and roadmap views will be unavailable.')
     }
     if (teamsWithoutMembers.length > 0) {
-      warnings.push(`${teamsWithoutMembers.length} team${teamsWithoutMembers.length === 1 ? '' : 's'} still have no members. Engineer metrics will be thin until those members are added.`)
+      warnings.push(`${teamsWithoutMembers.length} team${teamsWithoutMembers.length === 1 ? '' : 's'} still have no members.`)
     }
-    if (!optional.portClientId.trim()) {
-      warnings.push('Port is not connected. Service catalog and Port-backed DORA data will remain unavailable.')
-    }
-    if (!gitlab.baseGroup.trim()) {
-      warnings.push('GitLab base group is empty, so future team discovery will stay manual.')
+    if (aiProvider === 'none') {
+      warnings.push('No AI provider connected. AI summaries and analysis will be unavailable.')
     }
     return warnings
-  }, [gitlab.baseGroup, jiraFullyConfigured, optional.portClientId, teamsWithoutMembers.length])
+  }, [codePlatform, issueTracker, aiProvider, teamsWithoutMembers.length])
 
   const currentStepIndex = Math.max(0, STEPS.findIndex(candidate => candidate.key === step))
 
   const canContinueBasics = Boolean(org.name.trim() && org.slug.trim())
-  const canContinueConnections = Boolean(
-    gitlab.token.trim() &&
-      validation?.gitlab?.ok &&
-      !jiraPartiallyConfigured &&
-      (!jiraFullyConfigured || validation?.jira?.ok),
-  )
+  const canContinueConnections = true
   const canContinueTeams = teams.length > 0 && incompleteTeams.length === 0
   const readinessHint =
     step === 'basics' && !canContinueBasics
@@ -700,14 +749,42 @@ export default function Setup({ onComplete, isNewDomain = false }: SetupProps) {
     setCreateError(null)
     setValidation(null)
     try {
-      const payload: Record<string, string> = {
-        gitlab_token: gitlab.token,
-        gitlab_url: gitlab.url.trim(),
+      const payload: Record<string, string> = {}
+      if (codePlatform === 'gitlab' && gitlab.token.trim()) {
+        payload.gitlab_token = gitlab.token
+        payload.gitlab_url = gitlab.url.trim()
       }
-      if (jiraFullyConfigured) {
+      if (codePlatform === 'github' && github.token.trim()) {
+        payload.github_token = github.token
+        if (github.org.trim()) payload.github_org = github.org.trim()
+      }
+      if (issueTracker === 'jira' && jira.url.trim() && jira.email.trim() && jira.token.trim()) {
         payload.jira_url = jira.url.trim()
         payload.jira_email = jira.email.trim()
         payload.jira_token = jira.token
+      }
+      if (issueTracker === 'linear' && linear.apiKey.trim()) {
+        payload.linear_api_key = linear.apiKey
+      }
+      if (issueTracker === 'monday' && monday.token.trim()) {
+        payload.monday_token = monday.token
+      }
+      if (issueTracker === 'asana' && asana.token.trim()) {
+        payload.asana_token = asana.token
+      }
+      if (aiProvider === 'openai' && ai.openaiKey.trim()) {
+        payload.openai_api_key = ai.openaiKey
+      }
+      if (aiProvider === 'anthropic' && ai.anthropicKey.trim()) {
+        payload.anthropic_api_key = ai.anthropicKey
+      }
+      if (securityProvider === 'snyk' && optional.snykToken.trim()) {
+        payload.snyk_token = optional.snykToken
+      }
+
+      if (Object.keys(payload).length === 0) {
+        setValidation({})
+        return
       }
 
       const response = await axios.post('/api/onboard/validate', payload)
@@ -725,10 +802,8 @@ export default function Setup({ onComplete, isNewDomain = false }: SetupProps) {
       }
     } catch (error: any) {
       setValidation({
-        gitlab: {
-          ok: false,
-          error: error.response?.data?.detail ?? 'Connection validation failed',
-        },
+        gitlab: codePlatform === 'gitlab' ? { ok: false, error: error.response?.data?.detail ?? 'Validation failed' } : null,
+        github: codePlatform === 'github' ? { ok: false, error: error.response?.data?.detail ?? 'Validation failed' } : null,
       })
     } finally {
       setValidating(false)
@@ -925,27 +1000,40 @@ export default function Setup({ onComplete, isNewDomain = false }: SetupProps) {
             email: member.email.trim() || undefined,
           })),
         })),
-        gitlab: {
-          token: gitlab.token,
-          url: gitlab.url.trim(),
-          base_group: gitlab.baseGroup.trim(),
-        },
       }
 
-      if (jiraFullyConfigured) {
-        payload.jira = {
-          url: jira.url.trim(),
-          email: jira.email.trim(),
-          token: jira.token,
+      // Code platform
+      if (codePlatform === 'gitlab' && gitlab.token.trim()) {
+        payload.gitlab = { token: gitlab.token, url: gitlab.url.trim(), base_group: gitlab.baseGroup.trim() }
+      }
+      if (codePlatform === 'github' && github.token.trim()) {
+        payload.github = { token: github.token, org: github.org.trim() }
+      }
+
+      // Issue tracker
+      if (issueTracker === 'jira' && jira.url.trim() && jira.email.trim() && jira.token.trim()) {
+        payload.jira = { url: jira.url.trim(), email: jira.email.trim(), token: jira.token }
+      }
+      if (issueTracker === 'linear' && linear.apiKey.trim()) {
+        payload.linear = { api_key: linear.apiKey }
+      }
+      if (issueTracker === 'monday' && monday.token.trim()) {
+        payload.monday = { token: monday.token }
+      }
+      if (issueTracker === 'asana' && asana.token.trim()) {
+        payload.asana = { token: asana.token }
+      }
+
+      // AI
+      if (aiProvider !== 'none') {
+        payload.llm = {
+          openai_api_key: aiProvider === 'openai' ? ai.openaiKey.trim() : '',
+          anthropic_api_key: aiProvider === 'anthropic' ? ai.anthropicKey.trim() : '',
         }
       }
 
-      if (
-        optional.portClientId.trim() ||
-        optional.portClientSecret.trim() ||
-        optional.portBaseUrl.trim() ||
-        optional.snykToken.trim()
-      ) {
+      // Port + Snyk (keep existing pattern)
+      if (optional.portClientId.trim() || optional.portClientSecret.trim() || optional.snykToken.trim()) {
         payload.optional = {
           port_client_id: optional.portClientId.trim(),
           port_client_secret: optional.portClientSecret.trim(),
@@ -1116,95 +1204,285 @@ export default function Setup({ onComplete, isNewDomain = false }: SetupProps) {
               </div>
               <div>
                 <p className="text-[11px] uppercase tracking-[0.24em] text-slate-500">Runtime credentials</p>
-                <h2 className="mt-2 text-2xl font-semibold text-white">Validate the real connections before creating anything.</h2>
+                <h2 className="mt-2 text-2xl font-semibold text-white">Connect the tools your org uses.</h2>
                 <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-400">
-                  GitLab is required because the app is metrics-first. Jira is optional, but if you connect it here the wizard will discover projects and wire epic health from day one.
+                  Every integration is optional. Pick the code platform, issue tracker, AI provider, and security scanner that match your stack. Validate before moving on.
                 </p>
               </div>
             </div>
 
             <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
               <div className="space-y-6">
+                {/* Code Platform */}
                 <div className="rounded-3xl border border-slate-800 bg-slate-950/70 p-5">
-                  <div className="flex items-center gap-3">
-                    <FolderGit2 className="text-cyan-300" size={18} />
-                    <div>
-                      <p className="text-sm font-semibold text-white">GitLab</p>
-                      <p className="text-xs text-slate-500">Required for engineer activity, DORA, and repo discovery.</p>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <FolderGit2 className="text-cyan-300" size={18} />
+                      <div>
+                        <p className="text-sm font-semibold text-white">Code platform</p>
+                        <p className="text-xs text-slate-500">Engineer activity, MR metrics, and repo discovery.</p>
+                      </div>
                     </div>
+                    <select
+                      className="setup-input !w-auto !py-2 !px-3 !text-xs"
+                      value={codePlatform}
+                      onChange={event => setCodePlatform(event.target.value as CodePlatform)}
+                    >
+                      <option value="none">None</option>
+                      <option value="gitlab">GitLab</option>
+                      <option value="github">GitHub</option>
+                    </select>
                   </div>
-                  <div className="mt-5 grid gap-4 md:grid-cols-2">
-                    <label className="space-y-2 text-sm text-slate-300 md:col-span-2">
-                      <span className="text-xs uppercase tracking-[0.18em] text-slate-500">Base URL</span>
-                      <input
-                        className="setup-input"
-                        value={gitlab.url}
-                        placeholder="https://gitlab.com"
-                        onChange={event => setGitlab(current => ({ ...current, url: event.target.value }))}
-                      />
-                    </label>
-                    <label className="space-y-2 text-sm text-slate-300 md:col-span-2">
-                      <span className="text-xs uppercase tracking-[0.18em] text-slate-500">Personal access token</span>
-                      <input
-                        className="setup-input font-mono text-xs"
-                        type="password"
-                        value={gitlab.token}
-                        placeholder="glpat-..."
-                        onChange={event => setGitlab(current => ({ ...current, token: event.target.value }))}
-                      />
-                    </label>
-                    <label className="space-y-2 text-sm text-slate-300 md:col-span-2">
-                      <span className="text-xs uppercase tracking-[0.18em] text-slate-500">Base group for discovery</span>
-                      <input
-                        className="setup-input font-mono text-xs"
-                        value={gitlab.baseGroup}
-                        placeholder="acme/teams"
-                        onChange={event => setGitlab(current => ({ ...current, baseGroup: event.target.value }))}
-                      />
-                    </label>
-                  </div>
+
+                  {codePlatform === 'gitlab' ? (
+                    <div className="mt-5 grid gap-4 md:grid-cols-2">
+                      <label className="space-y-2 text-sm text-slate-300 md:col-span-2">
+                        <span className="text-xs uppercase tracking-[0.18em] text-slate-500">Base URL</span>
+                        <input
+                          className="setup-input"
+                          value={gitlab.url}
+                          placeholder="https://gitlab.com"
+                          onChange={event => setGitlab(current => ({ ...current, url: event.target.value }))}
+                        />
+                      </label>
+                      <label className="space-y-2 text-sm text-slate-300 md:col-span-2">
+                        <span className="text-xs uppercase tracking-[0.18em] text-slate-500">Personal access token</span>
+                        <input
+                          className="setup-input font-mono text-xs"
+                          type="password"
+                          value={gitlab.token}
+                          placeholder="glpat-..."
+                          onChange={event => setGitlab(current => ({ ...current, token: event.target.value }))}
+                        />
+                      </label>
+                      <label className="space-y-2 text-sm text-slate-300 md:col-span-2">
+                        <span className="text-xs uppercase tracking-[0.18em] text-slate-500">Base group for discovery</span>
+                        <input
+                          className="setup-input font-mono text-xs"
+                          value={gitlab.baseGroup}
+                          placeholder="acme/teams"
+                          onChange={event => setGitlab(current => ({ ...current, baseGroup: event.target.value }))}
+                        />
+                      </label>
+                    </div>
+                  ) : null}
+
+                  {codePlatform === 'github' ? (
+                    <div className="mt-5 grid gap-4 md:grid-cols-2">
+                      <label className="space-y-2 text-sm text-slate-300 md:col-span-2">
+                        <span className="text-xs uppercase tracking-[0.18em] text-slate-500">Personal access token</span>
+                        <input
+                          className="setup-input font-mono text-xs"
+                          type="password"
+                          value={github.token}
+                          placeholder="ghp_..."
+                          onChange={event => setGithub(current => ({ ...current, token: event.target.value }))}
+                        />
+                      </label>
+                      <label className="space-y-2 text-sm text-slate-300 md:col-span-2">
+                        <span className="text-xs uppercase tracking-[0.18em] text-slate-500">Organization (optional)</span>
+                        <input
+                          className="setup-input font-mono text-xs"
+                          value={github.org}
+                          placeholder="my-org"
+                          onChange={event => setGithub(current => ({ ...current, org: event.target.value }))}
+                        />
+                      </label>
+                    </div>
+                  ) : null}
                 </div>
 
+                {/* Issue Tracker */}
                 <div className="rounded-3xl border border-slate-800 bg-slate-950/70 p-5">
-                  <div className="flex items-center gap-3">
-                    <ShieldCheck className="text-amber-300" size={18} />
-                    <div>
-                      <p className="text-sm font-semibold text-white">Jira</p>
-                      <p className="text-xs text-slate-500">Optional, but strongly recommended for epic health and project drill-through.</p>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <ShieldCheck className="text-amber-300" size={18} />
+                      <div>
+                        <p className="text-sm font-semibold text-white">Issue tracker</p>
+                        <p className="text-xs text-slate-500">Epic health, roadmap views, and project drill-through.</p>
+                      </div>
                     </div>
+                    <select
+                      className="setup-input !w-auto !py-2 !px-3 !text-xs"
+                      value={issueTracker}
+                      onChange={event => setIssueTracker(event.target.value as IssueTracker)}
+                    >
+                      <option value="none">None</option>
+                      <option value="jira">Jira</option>
+                      <option value="linear">Linear</option>
+                      <option value="monday">Monday.com</option>
+                      <option value="asana">Asana</option>
+                    </select>
                   </div>
-                  <div className="mt-5 grid gap-4 md:grid-cols-2">
-                    <label className="space-y-2 text-sm text-slate-300 md:col-span-2">
-                      <span className="text-xs uppercase tracking-[0.18em] text-slate-500">Jira URL</span>
-                      <input
-                        className="setup-input"
-                        value={jira.url}
-                        placeholder="https://your-org.atlassian.net"
-                        onChange={event => setJira(current => ({ ...current, url: event.target.value }))}
-                      />
-                    </label>
-                    <label className="space-y-2 text-sm text-slate-300">
-                      <span className="text-xs uppercase tracking-[0.18em] text-slate-500">Email</span>
-                      <input
-                        className="setup-input"
-                        value={jira.email}
-                        placeholder="you@company.com"
-                        onChange={event => setJira(current => ({ ...current, email: event.target.value }))}
-                      />
-                    </label>
-                    <label className="space-y-2 text-sm text-slate-300">
-                      <span className="text-xs uppercase tracking-[0.18em] text-slate-500">API token</span>
-                      <input
-                        className="setup-input font-mono text-xs"
-                        type="password"
-                        value={jira.token}
-                        placeholder="ATATT3x..."
-                        onChange={event => setJira(current => ({ ...current, token: event.target.value }))}
-                      />
-                    </label>
-                  </div>
+
+                  {issueTracker === 'jira' ? (
+                    <div className="mt-5 grid gap-4 md:grid-cols-2">
+                      <label className="space-y-2 text-sm text-slate-300 md:col-span-2">
+                        <span className="text-xs uppercase tracking-[0.18em] text-slate-500">Jira URL</span>
+                        <input
+                          className="setup-input"
+                          value={jira.url}
+                          placeholder="https://your-org.atlassian.net"
+                          onChange={event => setJira(current => ({ ...current, url: event.target.value }))}
+                        />
+                      </label>
+                      <label className="space-y-2 text-sm text-slate-300">
+                        <span className="text-xs uppercase tracking-[0.18em] text-slate-500">Email</span>
+                        <input
+                          className="setup-input"
+                          value={jira.email}
+                          placeholder="you@company.com"
+                          onChange={event => setJira(current => ({ ...current, email: event.target.value }))}
+                        />
+                      </label>
+                      <label className="space-y-2 text-sm text-slate-300">
+                        <span className="text-xs uppercase tracking-[0.18em] text-slate-500">API token</span>
+                        <input
+                          className="setup-input font-mono text-xs"
+                          type="password"
+                          value={jira.token}
+                          placeholder="ATATT3x..."
+                          onChange={event => setJira(current => ({ ...current, token: event.target.value }))}
+                        />
+                      </label>
+                    </div>
+                  ) : null}
+
+                  {issueTracker === 'linear' ? (
+                    <div className="mt-5">
+                      <label className="space-y-2 text-sm text-slate-300">
+                        <span className="text-xs uppercase tracking-[0.18em] text-slate-500">API key</span>
+                        <input
+                          className="setup-input font-mono text-xs"
+                          type="password"
+                          value={linear.apiKey}
+                          placeholder="lin_api_..."
+                          onChange={event => setLinear({ apiKey: event.target.value })}
+                        />
+                      </label>
+                    </div>
+                  ) : null}
+
+                  {issueTracker === 'monday' ? (
+                    <div className="mt-5">
+                      <label className="space-y-2 text-sm text-slate-300">
+                        <span className="text-xs uppercase tracking-[0.18em] text-slate-500">API token</span>
+                        <input
+                          className="setup-input font-mono text-xs"
+                          type="password"
+                          value={monday.token}
+                          placeholder="Monday API token"
+                          onChange={event => setMonday({ token: event.target.value })}
+                        />
+                      </label>
+                    </div>
+                  ) : null}
+
+                  {issueTracker === 'asana' ? (
+                    <div className="mt-5">
+                      <label className="space-y-2 text-sm text-slate-300">
+                        <span className="text-xs uppercase tracking-[0.18em] text-slate-500">Personal access token</span>
+                        <input
+                          className="setup-input font-mono text-xs"
+                          type="password"
+                          value={asana.token}
+                          placeholder="Asana PAT"
+                          onChange={event => setAsana({ token: event.target.value })}
+                        />
+                      </label>
+                    </div>
+                  ) : null}
                 </div>
 
+                {/* AI Provider */}
+                <div className="rounded-3xl border border-slate-800 bg-slate-950/70 p-5">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <Sparkles className="text-violet-300" size={18} />
+                      <div>
+                        <p className="text-sm font-semibold text-white">AI provider</p>
+                        <p className="text-xs text-slate-500">Powers AI summaries and analysis features.</p>
+                      </div>
+                    </div>
+                    <select
+                      className="setup-input !w-auto !py-2 !px-3 !text-xs"
+                      value={aiProvider}
+                      onChange={event => setAiProvider(event.target.value as AiProvider)}
+                    >
+                      <option value="none">None</option>
+                      <option value="openai">OpenAI</option>
+                      <option value="anthropic">Anthropic</option>
+                    </select>
+                  </div>
+
+                  {aiProvider === 'openai' ? (
+                    <div className="mt-5">
+                      <label className="space-y-2 text-sm text-slate-300">
+                        <span className="text-xs uppercase tracking-[0.18em] text-slate-500">OpenAI API key</span>
+                        <input
+                          className="setup-input font-mono text-xs"
+                          type="password"
+                          value={ai.openaiKey}
+                          placeholder="sk-..."
+                          onChange={event => setAi(current => ({ ...current, openaiKey: event.target.value }))}
+                        />
+                      </label>
+                    </div>
+                  ) : null}
+
+                  {aiProvider === 'anthropic' ? (
+                    <div className="mt-5">
+                      <label className="space-y-2 text-sm text-slate-300">
+                        <span className="text-xs uppercase tracking-[0.18em] text-slate-500">Anthropic API key</span>
+                        <input
+                          className="setup-input font-mono text-xs"
+                          type="password"
+                          value={ai.anthropicKey}
+                          placeholder="sk-ant-..."
+                          onChange={event => setAi(current => ({ ...current, anthropicKey: event.target.value }))}
+                        />
+                      </label>
+                    </div>
+                  ) : null}
+                </div>
+
+                {/* Security */}
+                <div className="rounded-3xl border border-slate-800 bg-slate-950/70 p-5">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <ShieldCheck className="text-emerald-300" size={18} />
+                      <div>
+                        <p className="text-sm font-semibold text-white">Security</p>
+                        <p className="text-xs text-slate-500">Vulnerability scanning and security views.</p>
+                      </div>
+                    </div>
+                    <select
+                      className="setup-input !w-auto !py-2 !px-3 !text-xs"
+                      value={securityProvider}
+                      onChange={event => setSecurityProvider(event.target.value as SecurityProvider)}
+                    >
+                      <option value="none">None</option>
+                      <option value="snyk">Snyk</option>
+                    </select>
+                  </div>
+
+                  {securityProvider === 'snyk' ? (
+                    <div className="mt-5">
+                      <label className="space-y-2 text-sm text-slate-300">
+                        <span className="text-xs uppercase tracking-[0.18em] text-slate-500">Snyk token</span>
+                        <input
+                          className="setup-input font-mono text-xs"
+                          type="password"
+                          value={optional.snykToken}
+                          placeholder="Snyk API token"
+                          onChange={event => setOptional(current => ({ ...current, snykToken: event.target.value }))}
+                        />
+                      </label>
+                    </div>
+                  ) : null}
+                </div>
+
+                {/* Port (advanced, collapsible) */}
                 <div className="rounded-3xl border border-slate-800 bg-slate-950/70 p-5">
                   <button
                     type="button"
@@ -1212,8 +1490,8 @@ export default function Setup({ onComplete, isNewDomain = false }: SetupProps) {
                     className="flex w-full items-center justify-between gap-3 text-left"
                   >
                     <div>
-                      <p className="text-sm font-semibold text-white">Optional integrations</p>
-                      <p className="mt-1 text-xs text-slate-500">Port enables services and Port-backed DORA. Snyk enables security views.</p>
+                      <p className="text-sm font-semibold text-white">Port (advanced)</p>
+                      <p className="mt-1 text-xs text-slate-500">Service catalog and Port-backed DORA metrics.</p>
                     </div>
                     <ChevronRight size={16} className={`text-slate-500 transition-transform ${advancedOpen ? 'rotate-90' : ''}`} />
                   </button>
@@ -1245,59 +1523,61 @@ export default function Setup({ onComplete, isNewDomain = false }: SetupProps) {
                           onChange={event => setOptional(current => ({ ...current, portBaseUrl: event.target.value }))}
                         />
                       </label>
-                      <label className="space-y-2 text-sm text-slate-300 md:col-span-2">
-                        <span className="text-xs uppercase tracking-[0.18em] text-slate-500">Snyk token</span>
-                        <input
-                          className="setup-input font-mono text-xs"
-                          type="password"
-                          value={optional.snykToken}
-                          onChange={event => setOptional(current => ({ ...current, snykToken: event.target.value }))}
-                        />
-                      </label>
                     </div>
                   ) : null}
                 </div>
               </div>
 
               <div className="space-y-4">
-                <ValidationBadge label="GitLab" result={validation?.gitlab} />
-                <ValidationBadge label="Jira" result={jiraFullyConfigured ? validation?.jira : null} />
+                {codePlatform === 'gitlab' ? <ValidationBadge label="GitLab" result={validation?.gitlab} /> : null}
+                {codePlatform === 'github' ? <ValidationBadge label="GitHub" result={validation?.github} /> : null}
+                {issueTracker === 'jira' ? <ValidationBadge label="Jira" result={validation?.jira} /> : null}
+                {issueTracker === 'linear' ? <ValidationBadge label="Linear" result={validation?.linear} /> : null}
+                {issueTracker === 'monday' ? <ValidationBadge label="Monday" result={validation?.monday} /> : null}
+                {issueTracker === 'asana' ? <ValidationBadge label="Asana" result={validation?.asana} /> : null}
+                {aiProvider === 'openai' ? <ValidationBadge label="OpenAI" result={validation?.openai} /> : null}
+                {aiProvider === 'anthropic' ? <ValidationBadge label="Anthropic" result={validation?.anthropic} /> : null}
+                {securityProvider === 'snyk' ? <ValidationBadge label="Snyk" result={validation?.snyk} /> : null}
 
-                {jiraPartiallyConfigured ? (
+                {!hasAnyConnection ? (
                   <div className="rounded-2xl border border-amber-500/25 bg-amber-500/10 px-4 py-3 text-xs leading-5 text-amber-200">
-                    Jira is partially filled. Complete all three Jira fields or clear them before continuing.
+                    No integrations selected. Pick at least one provider to validate, or skip ahead.
                   </div>
                 ) : null}
 
                 <button
                   type="button"
                   onClick={validateConnections}
-                  disabled={validating || !gitlab.token.trim()}
+                  disabled={validating || !hasAnyConnection}
                   className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-cyan-400 px-4 py-3 text-sm font-semibold text-slate-950 transition-colors hover:bg-cyan-300 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
                 >
                   {validating ? <Loader2 size={16} className="animate-spin" /> : <ShieldCheck size={16} />}
                   Validate connections
                 </button>
 
-                <button
-                  type="button"
-                  onClick={() => void discoverGitLabGroups(false)}
-                  disabled={discoveringGroups || !gitlab.token.trim() || !gitlab.baseGroup.trim()}
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-700 px-4 py-3 text-sm font-medium text-slate-200 transition-colors hover:border-slate-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {discoveringGroups ? <Loader2 size={16} className="animate-spin" /> : <FolderGit2 size={16} />}
-                  Discover GitLab teams
-                </button>
+                {codePlatform === 'gitlab' && validation?.gitlab?.ok && gitlab.baseGroup.trim() ? (
+                  <button
+                    type="button"
+                    onClick={() => void discoverGitLabGroups(false)}
+                    disabled={discoveringGroups}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-700 px-4 py-3 text-sm font-medium text-slate-200 transition-colors hover:border-slate-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {discoveringGroups ? <Loader2 size={16} className="animate-spin" /> : <FolderGit2 size={16} />}
+                    Discover GitLab teams
+                  </button>
+                ) : null}
 
-                <button
-                  type="button"
-                  onClick={() => void discoverJiraProjects(false)}
-                  disabled={discoveringProjects || !jiraFullyConfigured}
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-700 px-4 py-3 text-sm font-medium text-slate-200 transition-colors hover:border-slate-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {discoveringProjects ? <Loader2 size={16} className="animate-spin" /> : <RefreshCcw size={16} />}
-                  Discover Jira projects
-                </button>
+                {issueTracker === 'jira' && validation?.jira?.ok ? (
+                  <button
+                    type="button"
+                    onClick={() => void discoverJiraProjects(false)}
+                    disabled={discoveringProjects}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-700 px-4 py-3 text-sm font-medium text-slate-200 transition-colors hover:border-slate-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {discoveringProjects ? <Loader2 size={16} className="animate-spin" /> : <RefreshCcw size={16} />}
+                    Discover Jira projects
+                  </button>
+                ) : null}
 
                 {groupsError ? (
                   <div className="rounded-2xl border border-rose-500/25 bg-rose-500/10 px-4 py-3 text-xs leading-5 text-rose-200">
@@ -1478,14 +1758,22 @@ export default function Setup({ onComplete, isNewDomain = false }: SetupProps) {
                     <p className="mt-1 text-xs text-slate-500">{teamsWithoutMembers.length} without members</p>
                   </div>
                   <div>
-                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">GitLab</p>
-                    <p className="mt-2 text-sm text-white">{validation?.gitlab?.user || 'Validated'}</p>
-                    <p className="mt-1 font-mono text-xs text-slate-500">{gitlab.baseGroup || gitlab.url}</p>
+                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Code platform</p>
+                    <p className="mt-2 text-sm text-white">
+                      {codePlatform === 'gitlab' ? `GitLab — ${validation?.gitlab?.user || 'Validated'}` :
+                       codePlatform === 'github' ? `GitHub — ${validation?.github?.user || 'Validated'}` :
+                       'None'}
+                    </p>
                   </div>
                   <div>
-                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Jira</p>
-                    <p className="mt-2 text-sm text-white">{validation?.jira?.user || 'Not connected'}</p>
-                    <p className="mt-1 text-xs text-slate-500">{jira.url || 'Jira skipped'}</p>
+                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Issue tracker</p>
+                    <p className="mt-2 text-sm text-white">
+                      {issueTracker === 'jira' ? `Jira — ${validation?.jira?.user || 'Validated'}` :
+                       issueTracker === 'linear' ? `Linear — ${validation?.linear?.user || 'Validated'}` :
+                       issueTracker === 'monday' ? `Monday — ${validation?.monday?.user || 'Validated'}` :
+                       issueTracker === 'asana' ? `Asana — ${validation?.asana?.user || 'Validated'}` :
+                       'None'}
+                    </p>
                   </div>
                 </div>
 
@@ -1550,7 +1838,7 @@ export default function Setup({ onComplete, isNewDomain = false }: SetupProps) {
               {isNewDomain ? 'Onboard a new domain' : 'Complete onboarding for this domain'}
             </h1>
             <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-400 md:text-base">
-              The goal here is not just to create a config file. It is to finish with a domain that can immediately sync GitLab activity, optionally enrich with Jira and Port, and open into a dashboard that already makes sense.
+              The goal here is not just to create a config file. It is to finish with a domain that can immediately sync activity from your code platform and issue tracker, and open into a dashboard that already makes sense.
             </p>
           </div>
           <div className="rounded-2xl border border-slate-800 bg-slate-900/85 px-4 py-3 text-xs text-slate-400 shadow-[0_14px_40px_rgba(2,12,27,0.35)]">
