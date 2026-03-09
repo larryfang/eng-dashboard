@@ -940,12 +940,12 @@ export default function Setup({ onComplete, isNewDomain = false }: SetupProps) {
         params: { org: github.org.trim(), team_slug: teamSlug },
         headers: { 'X-GitHub-Token': github.token },
       })
-      const members: Member[] = (response.data.members ?? []).map((m: any) => ({
+      const members: Member[] = (response.data.members ?? []).map((m: { username?: string; name?: string }) => ({
         username: m.username || '', name: m.name || m.username || '', email: '', role: 'engineer' as MemberRole,
       }))
       updateTeam(teamIndex, { ...team, members })
-    } catch (error: any) {
-      setMemberErrors(c => ({ ...c, [key]: error.response?.data?.detail ?? 'GitHub member discovery failed' }))
+    } catch (error: unknown) {
+      setMemberErrors(c => ({ ...c, [key]: error instanceof AxiosError ? error.response?.data?.detail ?? 'GitHub member discovery failed' : 'GitHub member discovery failed' }))
     } finally {
       setMemberLoading(c => ({ ...c, [key]: false }))
     }
@@ -975,7 +975,7 @@ export default function Setup({ onComplete, isNewDomain = false }: SetupProps) {
         },
       })
 
-      const discoveredMembers: Member[] = (response.data.members ?? []).map((member: any) => ({
+      const discoveredMembers: Member[] = (response.data.members ?? []).map((member: { username?: string; name?: string; role?: string }) => ({
         username: member.username || '',
         name: member.name || member.username || '',
         email: '',
@@ -983,10 +983,10 @@ export default function Setup({ onComplete, isNewDomain = false }: SetupProps) {
       }))
 
       updateTeam(teamIndex, { ...team, members: discoveredMembers })
-    } catch (error: any) {
+    } catch (error: unknown) {
       setMemberErrors(current => ({
         ...current,
-        [key]: error.response?.data?.detail ?? 'Member discovery failed',
+        [key]: error instanceof AxiosError ? error.response?.data?.detail ?? 'Member discovery failed' : 'Member discovery failed',
       }))
     } finally {
       setMemberLoading(current => ({ ...current, [key]: false }))

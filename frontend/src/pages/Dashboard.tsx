@@ -73,7 +73,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [days, setDays] = useState<PeriodDays>(30)
-  const [syncInfo, setSyncInfo] = useState<any>(null)
+  const [syncInfo, setSyncInfo] = useState<{ last_synced_at: string | null; next_sync_at?: string | null; is_stale: boolean; status: string; records_synced?: number } | null>(null)
   const [syncing, setSyncing] = useState(false)
   const [jiraSyncing, setJiraSyncing] = useState(false)
   const [schedulerRunning, setSchedulerRunning] = useState(false)

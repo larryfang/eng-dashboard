@@ -36,7 +36,7 @@ export default function Engineers() {
   const [sortKey, setSortKey] = useState<SortKey>('mrs_opened')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [days, setDays] = useState<PeriodDays>(30)
-  const [syncInfo, setSyncInfo] = useState<any>(null)
+  const [syncInfo, setSyncInfo] = useState<{ last_synced_at: string | null; next_sync_at?: string | null; is_stale: boolean; status: string; records_synced?: number } | null>(null)
   const [syncing, setSyncing] = useState(false)
   const [schedulerRunning, setSchedulerRunning] = useState(false)
   const [schedulerPaused, setSchedulerPaused] = useState(false)
