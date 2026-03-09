@@ -363,11 +363,13 @@ export default function JiraPage() {
       .finally(() => setLoading(false))
   }, [selectedTeam])
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load() }, [load])
 
   useEffect(() => {
     const currentTeam = searchParams.get('team') ?? ''
     if (currentTeam !== selectedTeam) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSelectedTeam(currentTeam)
     }
   }, [searchParams, selectedTeam])
@@ -378,6 +380,7 @@ export default function JiraPage() {
     }
     const match = epics.find(epic => epic.key === epicParam)
     if (match && activeEpic?.key !== match.key) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setActiveEpic(match)
     }
   }, [activeEpic?.key, epicParam, epics])

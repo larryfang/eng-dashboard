@@ -73,18 +73,26 @@ export default function DoraPage() {
   const [days, setDays] = useState(30)
 
   useEffect(() => {
-    setMetricsLoading(true)
-    setError(null)
-    getTeamMetrics(days)
-      .then(res => {
+    let cancelled = false
+    async function fetchMetrics() {
+      setMetricsLoading(true)
+      setError(null)
+      try {
+        const res = await getTeamMetrics(days)
+        if (cancelled) return
         const data = res.data
         const raw: unknown[] = Array.isArray(data)
           ? data
           : (data as { teams?: unknown[] }).teams ?? []
         setTeams(raw.map(normalize))
-      })
-      .catch(err => setError(err?.message ?? 'Failed to load DORA metrics'))
-      .finally(() => setMetricsLoading(false))
+      } catch (err: unknown) {
+        if (!cancelled) setError((err as Error)?.message ?? 'Failed to load DORA metrics')
+      } finally {
+        if (!cancelled) setMetricsLoading(false)
+      }
+    }
+    fetchMetrics()
+    return () => { cancelled = true }
   }, [days])
 
   if (metricsLoading) return <LoadingSpinner text="Loading DORA metrics..." />

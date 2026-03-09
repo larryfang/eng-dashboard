@@ -161,7 +161,30 @@ export default function ActivityPage() {
   }
 
   useEffect(() => {
-    load()
+    let cancelled = false
+    async function fetchData() {
+      try {
+        const res = await getMergeRequestActivity({ team, engineer, epic, state, days, compare, limit: 120 })
+        if (!cancelled) {
+          setData(res.data)
+          setError(null)
+        }
+      } catch (err: unknown) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Failed to load merge request activity')
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false)
+          setRefreshing(false)
+        }
+      }
+    }
+    fetchData()
+    return () => {
+      cancelled = true
+      setLoading(true)
+    }
   }, [team, engineer, epic, state, days, compare])
 
   if (loading) return <LoadingSpinner text="Loading merge requests..." />

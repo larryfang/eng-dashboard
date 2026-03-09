@@ -137,7 +137,10 @@ export default function ServicesPage() {
       .finally(() => setLoading(false))
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    load()
+  }, [])
 
   useEffect(() => {
     return () => {
@@ -149,6 +152,7 @@ export default function ServicesPage() {
   // Two-way sync: URL ?q= ↔ search state
   const urlQ = searchParams.get('q') ?? ''
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (urlQ) setSearch(urlQ)
   }, [urlQ])
   useEffect(() => {
@@ -180,6 +184,7 @@ export default function ServicesPage() {
           if (!firstDomain) firstDomain = domain
           for (const teamId of teamMap.keys()) teamKeys.add(`${domain}::${teamId}`)
         }
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setExpandedDomain(firstDomain)
         setExpandedTeams(teamKeys)
       }
@@ -203,7 +208,8 @@ export default function ServicesPage() {
   const toggleTeam = (key: string) => {
     setExpandedTeams(prev => {
       const next = new Set(prev)
-      next.has(key) ? next.delete(key) : next.add(key)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
       return next
     })
   }

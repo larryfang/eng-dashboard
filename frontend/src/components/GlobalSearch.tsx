@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Search, User, Users, GitMerge, TicketCheck, Server, BellRing, Settings2, FileText, X, ArrowRight } from 'lucide-react'
 import { globalSearch, type SearchResult } from '../api/client'
@@ -58,17 +58,19 @@ export default function GlobalSearch({ onClose }: Props) {
   const navigate = useNavigate()
 
   const trimmedQuery = query.trim()
-  const displayedResults = trimmedQuery.length >= 2 ? results : {}
-  const flatResults: SearchResult[] = []
-
-  for (const cat of Object.keys(CATEGORY_META)) {
-    if (displayedResults[cat]?.length) {
-      flatResults.push(...displayedResults[cat])
-      if (VIEW_ALL_ACTIONS[cat]) {
-        flatResults.push(VIEW_ALL_ACTIONS[cat](trimmedQuery))
+  const displayedResults = useMemo(() => trimmedQuery.length >= 2 ? results : {}, [trimmedQuery, results])
+  const flatResults = useMemo(() => {
+    const items: SearchResult[] = []
+    for (const cat of Object.keys(CATEGORY_META)) {
+      if (displayedResults[cat]?.length) {
+        items.push(...displayedResults[cat])
+        if (VIEW_ALL_ACTIONS[cat]) {
+          items.push(VIEW_ALL_ACTIONS[cat](trimmedQuery))
+        }
       }
     }
-  }
+    return items
+  }, [displayedResults, trimmedQuery])
 
   const activeSelectedIdx = flatResults.length === 0 ? 0 : Math.min(selectedIdx, flatResults.length - 1)
 
@@ -77,10 +79,11 @@ export default function GlobalSearch({ onClose }: Props) {
     return () => window.clearTimeout(timer)
   }, [])
 
+  const isLoading = loading && trimmedQuery.length >= 2
+
   useEffect(() => {
     if (trimmedQuery.length < 2) {
       abortRef.current?.abort()
-      setLoading(false)
       return
     }
 
@@ -112,6 +115,16 @@ export default function GlobalSearch({ onClose }: Props) {
 
   useEffect(() => () => abortRef.current?.abort(), [])
 
+  const handleSelect = (item: SearchResult) => {
+    if (trimmedQuery) saveRecent(trimmedQuery)
+    onClose()
+    if (item.url) {
+      navigate(item.url)
+    } else if (item.external_url) {
+      window.open(item.external_url, '_blank', 'noopener,noreferrer')
+    }
+  }
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -126,27 +139,25 @@ export default function GlobalSearch({ onClose }: Props) {
       } else if (e.key === 'Enter' && flatResults.length > 0) {
         e.preventDefault()
         const item = flatResults[activeSelectedIdx]
-        if (item) handleSelect(item)
+        if (item) {
+          if (trimmedQuery) saveRecent(trimmedQuery)
+          onClose()
+          if (item.url) {
+            navigate(item.url)
+          } else if (item.external_url) {
+            window.open(item.external_url, '_blank', 'noopener,noreferrer')
+          }
+        }
       }
     }
 
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [activeSelectedIdx, flatResults, onClose])
-
-  const handleSelect = (item: SearchResult) => {
-    if (trimmedQuery) saveRecent(trimmedQuery)
-    onClose()
-    if (item.url) {
-      navigate(item.url)
-    } else if (item.external_url) {
-      window.open(item.external_url, '_blank', 'noopener,noreferrer')
-    }
-  }
+  }, [activeSelectedIdx, flatResults, onClose, trimmedQuery, navigate])
 
   const recentSearches = getRecent()
   const hasResults = flatResults.length > 0
-  const showEmpty = trimmedQuery.length >= 2 && !loading && !hasResults
+  const showEmpty = trimmedQuery.length >= 2 && !isLoading && !hasResults
 
   let runningIdx = 0
 
@@ -160,7 +171,7 @@ export default function GlobalSearch({ onClose }: Props) {
         onClick={e => e.stopPropagation()}
       >
         <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-800">
-          <Search size={18} className={loading ? 'text-blue-400 animate-pulse' : 'text-gray-500'} />
+          <Search size={18} className={isLoading ? 'text-blue-400 animate-pulse' : 'text-gray-500'} />
           <input
             ref={inputRef}
             value={query}

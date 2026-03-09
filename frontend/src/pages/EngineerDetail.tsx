@@ -47,7 +47,7 @@ interface EngineerData {
   role?: string
   period_days?: number
   // Backend nests totals under summary
-  summary?: { mrs_opened: number; mrs_merged: number }
+  summary?: { mrs_opened: number; mrs_merged: number; commits?: number; reviews?: number }
   // Or flat (older shape)
   mrs_opened?: number
   mrs_merged?: number
@@ -98,6 +98,7 @@ export default function EngineerDetail() {
 
   useEffect(() => {
     if (!username) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setData(null)
     load(username, days)
   }, [username, days])
@@ -127,8 +128,8 @@ export default function EngineerDetail() {
   // Normalize nested vs flat summary
   const mrsOpened = data.summary?.mrs_opened ?? data.mrs_opened ?? 0
   const mrsMerged = data.summary?.mrs_merged ?? data.mrs_merged ?? 0
-  const commits = (data.summary as any)?.commits ?? data.commits ?? 0
-  const reviews = (data.summary as any)?.reviews ?? data.reviews ?? 0
+  const commits = data.summary?.commits ?? data.commits ?? 0
+  const reviews = data.summary?.reviews ?? data.reviews ?? 0
   const periodDays = data.period_days ?? 90
 
   // Normalize timeline field name

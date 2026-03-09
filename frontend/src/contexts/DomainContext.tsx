@@ -49,7 +49,17 @@ export function DomainProvider({ children }: { children: ReactNode }) {
   }
 
   useEffect(() => {
-    refreshDomains()
+    const fetchInitial = async () => {
+      try {
+        const r = await axios.get('/api/domains')
+        const list: DomainInfo[] = r.data.domains ?? []
+        setDomains(list)
+        setActiveDomain(list.find(d => d.active) ?? null)
+      } catch {
+        // Backend not yet configured — ignore silently
+      }
+    }
+    fetchInitial()
   }, [])
 
   return (
@@ -59,4 +69,5 @@ export function DomainProvider({ children }: { children: ReactNode }) {
   )
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const useDomain = () => useContext(DomainContext)
