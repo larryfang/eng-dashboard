@@ -230,9 +230,9 @@ def _normalize_stalled_epic_alerts(items: list[dict]) -> list[dict]:
                 "alert_type": "stalled_epic",
                 "severity": "critical" if days_stalled >= 14 else "warning",
                 "status": "open",
-                "title": f"{epic_key} has had no Jira updates for {days_stalled} days",
+                "title": f"{epic_key} has had no updates for {days_stalled} days",
                 "description": (
-                    f"{epic_name} has been idle in Jira for {days_stalled} days "
+                    f"{epic_name} has been idle for {days_stalled} days "
                     f"for {team_name}."
                 ),
                 "entity_type": "epic",
@@ -250,7 +250,7 @@ def _normalize_stalled_epic_alerts(items: list[dict]) -> list[dict]:
                         "epic_key": epic_key,
                         "epic_name": epic_name,
                         "days_stalled": days_stalled,
-                        "jira_url": _clean_text(item.get("jira_url")),
+                        "url": _clean_text(item.get("url") or item.get("jira_url")),
                     }
                 ),
                 "updated_at": None,

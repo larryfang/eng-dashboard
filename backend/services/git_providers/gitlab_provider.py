@@ -4,11 +4,13 @@ import logging
 import requests
 from backend.services.git_providers.base import GitProvider, PullRequestData
 from backend.services.datetime_utils import parse_dt
+from backend.plugins.registry import register
 
 logger = logging.getLogger(__name__)
 MAX_PAGES = 50
 
 
+@register("git_provider", "gitlab")
 class GitLabProvider(GitProvider):
     """Fetches engineer activity from the GitLab REST API."""
 

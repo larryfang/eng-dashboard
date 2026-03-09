@@ -1,17 +1,121 @@
 """
-Jira Epics Sync Service
+Epics Sync Service
 
-Fetches epics from Jira REST API and upserts into jira_epics table
-in ecosystem.db. Called by sync_router for the 'jira_epics' section.
+Provider-agnostic entry point for syncing epics into jira_epics table
+in ecosystem.db. Routes to Jira or GitHub sync implementations.
+
+For Jira: directly calls the existing sync_jira_epics() logic.
+For GitHub: uses the issue_tracker plugin interface.
 """
 import logging
 from datetime import datetime, timezone
+from typing import Optional
+
 from sqlalchemy.orm import Session
 
 from backend.services.datetime_utils import parse_dt
 
 logger = logging.getLogger(__name__)
 
+
+# ---------------------------------------------------------------------------
+# Provider-agnostic entry point
+# ---------------------------------------------------------------------------
+
+def sync_epics(db: Session, provider: Optional[str] = None) -> int:
+    """
+    Sync epics from the configured issue tracker.
+
+    Routes to provider-specific sync implementation.
+    For Jira, this calls the existing sync_jira_epics().
+    For GitHub, this calls _sync_github_epics() using the plugin interface.
+
+    Args:
+        db: SQLAlchemy session for ecosystem.db.
+        provider: "jira", "github", or None (auto-detect from domain config).
+
+    Returns:
+        Number of epics upserted.
+    """
+    if provider is None:
+        try:
+            from backend.issue_tracker.factory import _get_configured_provider
+            provider = _get_configured_provider()
+        except RuntimeError:
+            provider = "jira"  # Legacy fallback
+
+    if provider == "jira":
+        return sync_jira_epics(db)
+
+    if provider in ("github", "github-issues"):
+        return _sync_github_epics(db)
+
+    raise ValueError(f"Unsupported issue tracker for epic sync: {provider}")
+
+
+# ---------------------------------------------------------------------------
+# GitHub sync via plugin interface
+# ---------------------------------------------------------------------------
+
+def _sync_github_epics(db: Session) -> int:
+    """
+    Sync epics from GitHub Issues using the issue_tracker plugin interface.
+
+    Reuses the JiraEpic ORM table — column names are Jira-flavoured but the
+    data is provider-agnostic enough (key, project, team, status, etc.).
+
+    Returns:
+        Number of epics upserted.
+    """
+    from backend.issue_tracker.factory import create_issue_tracker
+    from backend.core.config_loader import get_domain_config
+    from backend.services.domain_registry import get_active_slug
+    from backend.models_domain import JiraEpic  # Reuse table for now
+
+    plugin = create_issue_tracker("github")
+    cfg = get_domain_config(get_active_slug())
+
+    # Get team keys from config
+    team_keys = [t.key for t in cfg.teams]
+    epics = plugin.search_epics(team_keys, exclude_done=False)
+
+    now = datetime.now(timezone.utc)
+    upserted = 0
+
+    for epic in epics:
+        existing = db.query(JiraEpic).filter_by(key=epic.key).first()
+        if existing:
+            existing.team = epic.team
+            existing.summary = epic.summary
+            existing.status = epic.status
+            existing.priority = epic.priority
+            existing.assignee = epic.assignee or ""
+            existing.url = epic.url
+            existing.updated_date = epic.updated
+            existing.synced_at = now
+        else:
+            db.add(JiraEpic(
+                key=epic.key,
+                project=epic.project,
+                team=epic.team,
+                summary=epic.summary,
+                status=epic.status,
+                priority=epic.priority,
+                assignee=epic.assignee or "",
+                url=epic.url,
+                updated_date=epic.updated,
+                synced_at=now,
+            ))
+        upserted += 1
+
+    db.commit()
+    logger.info(f"GitHub epics sync complete: {upserted} upserted")
+    return upserted
+
+
+# ---------------------------------------------------------------------------
+# Jira-specific sync (original implementation, unchanged)
+# ---------------------------------------------------------------------------
 
 def sync_jira_epics(db: Session) -> int:
     """

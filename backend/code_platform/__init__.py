@@ -6,7 +6,7 @@ Supports:
 - GitHub (GitHubPlugin) [stub]
 """
 
-from .base import (
+from backend.code_platform.base import (
     CodePlatformPlugin,
     Repository,
     MergeRequest,
@@ -14,8 +14,8 @@ from .base import (
     DORAMetrics,
     SearchResult,
 )
-from .gitlab_plugin import GitLabPlugin
-from .github_plugin import GitHubPlugin
+from backend.code_platform.gitlab_plugin import GitLabPlugin
+from backend.code_platform.github_plugin import GitHubPlugin
 
 __all__ = [
     "CodePlatformPlugin",

@@ -5,12 +5,14 @@ import time
 import requests
 from backend.services.git_providers.base import GitProvider, PullRequestData
 from backend.services.datetime_utils import parse_dt
+from backend.plugins.registry import register
 
 logger = logging.getLogger(__name__)
 MAX_PAGES = 10  # GitHub Search API: 1000 results max (10 pages * 100)
 SEARCH_RATE_LIMIT_PAUSE = 2.0  # seconds between Search API calls (30/min limit)
 
 
+@register("git_provider", "github")
 class GitHubProvider(GitProvider):
     """Fetches engineer activity from the GitHub REST + Search APIs."""
 

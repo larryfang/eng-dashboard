@@ -9,7 +9,7 @@ from typing import Dict, List, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from ..base import BasePlugin
+from backend.base import BasePlugin
 
 
 @dataclass
