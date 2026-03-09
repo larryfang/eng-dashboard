@@ -132,7 +132,7 @@ def get_github_settings(domain_slug: str | None = None) -> dict[str, str]:
     secrets = load_domain_secrets(domain_slug).get("github", {}) or {}
     return {
         "token": secrets.get("token") or os.getenv("GITHUB_TOKEN", ""),
-        "org": secrets.get("org") or "",
+        "org": secrets.get("org") or os.getenv("GITHUB_ORG", ""),
     }
 
 
