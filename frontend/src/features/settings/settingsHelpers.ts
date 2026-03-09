@@ -1,6 +1,6 @@
 import type {
   ConfigValidationResponse,
-  GitLabHealthResponse,
+  CodePlatformHealthResponse,
   PortStatusResponse,
   SchedulerState,
   SyncHistoryRun,
@@ -34,14 +34,14 @@ export function formatDuration(seconds?: number | null): string {
 
 export function buildProviderCards(input: {
   validation: ConfigValidationResponse | null
-  gitlabHealth: GitLabHealthResponse | null
+  gitlabHealth: CodePlatformHealthResponse | null
   portStatus: PortStatusResponse | null
 }): ProviderCard[] {
   const { validation, gitlabHealth, portStatus } = input
 
   return [
     {
-      label: 'GitLab API',
+      label: 'Code Platform',
       ok: gitlabHealth?.status === 'ok' || validation?.gitlab?.ok === true,
       detail: gitlabHealth?.authenticated_as ?? validation?.gitlab?.user ?? 'Not validated yet',
       error: gitlabHealth?.error ?? validation?.gitlab?.error,

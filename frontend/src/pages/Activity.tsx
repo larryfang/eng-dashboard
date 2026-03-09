@@ -36,7 +36,11 @@ function ActivityTable({ title, items }: { title: string; items: MergeRequestAct
   if (items.length === 0) {
     return (
       <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-6 text-sm text-slate-400">
-        {title}: no merge requests found.
+        <p>{title}: no merge requests found.</p>
+        <p className="text-xs text-slate-500 mt-2">
+          Ensure your code platform is connected and synced in{' '}
+          <a href="/settings" className="text-blue-400 hover:underline">Settings</a>.
+        </p>
       </div>
     )
   }

@@ -144,7 +144,7 @@ export default function DoraPage() {
 
       {teams.length === 0 && !error ? (
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center text-gray-400">
-          <p className="text-sm">No DORA data available. Configure teams and GitLab to see metrics.</p>
+          <p className="text-sm">No DORA data available. Configure teams and a code platform to see metrics.</p>
         </div>
       ) : (
         <div className="space-y-4">

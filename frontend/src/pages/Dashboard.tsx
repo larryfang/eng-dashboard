@@ -205,7 +205,7 @@ export default function Dashboard() {
                 This domain isn't configured yet
               </h2>
               <p className="text-gray-400 text-sm mb-4">
-                Add your Jira and GitLab credentials to start tracking{' '}
+                Add your code platform and issue tracker credentials to start tracking{' '}
                 <span className="text-white">{config.organization?.name}</span> teams.
               </p>
               <a

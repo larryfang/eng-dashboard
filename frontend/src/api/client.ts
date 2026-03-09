@@ -69,13 +69,13 @@ export interface DORAMetrics {
 
 export const getConfig = () => api.get<OrgConfig>('/config')
 export const getEngineers = (team?: string, days = 30, compare = false) =>
-  api.get<{ engineers: Engineer[] }>('/gitlab/engineers', { params: { team, days, compare } })
+  api.get<{ engineers: Engineer[] }>('/code/engineers', { params: { team, days, compare } })
 export const getEngineer = (username: string, days = 90) =>
-  api.get('/gitlab/engineers/' + username, { params: { days } })
+  api.get('/code/engineers/' + username, { params: { days } })
 export const syncEngineer = (username: string, days = 90) =>
-  api.post(`/gitlab/engineers/${username}/sync`, null, { params: { days } })
-export const getTeamMetrics = (days = 30) => api.get('/gitlab/metrics', { params: { days } })
-export const getTeamSummary = (days = 30) => api.get<{ teams: Record<string, number>; period_days: number }>('/gitlab/team-summary', { params: { days } })
+  api.post(`/code/engineers/${username}/sync`, null, { params: { days } })
+export const getTeamMetrics = (days = 30) => api.get('/code/metrics', { params: { days } })
+export const getTeamSummary = (days = 30) => api.get<{ teams: Record<string, number>; period_days: number }>('/code/team-summary', { params: { days } })
 export const getJiraEpics = (team?: string, status?: string) =>
   api.get<{ epics: JiraEpic[]; count: number }>('/jira/index/epics', { params: { team, status } })
 
@@ -178,12 +178,15 @@ export interface SyncHistoryRun {
 export const getSyncHistory = (section?: string, limit = 30) =>
   api.get<{ runs: SyncHistoryRun[] }>('/sync/history', { params: { section, limit } })
 
-export interface GitLabHealthResponse {
+export interface CodePlatformHealthResponse {
   status: string
   gitlab_url?: string | null
   authenticated_as?: string | null
   error?: string | null
 }
+
+/** @deprecated Use CodePlatformHealthResponse */
+export type GitLabHealthResponse = CodePlatformHealthResponse
 
 export interface PortStatusResponse {
   configured: boolean
@@ -192,7 +195,9 @@ export interface PortStatusResponse {
   token_expires_at?: string | null
 }
 
-export const getGitLabHealth = () => api.get<GitLabHealthResponse>('/gitlab/health')
+export const getCodePlatformHealth = () => api.get<CodePlatformHealthResponse>('/code/health')
+/** @deprecated Use getCodePlatformHealth */
+export const getGitLabHealth = getCodePlatformHealth
 
 // LLM / AI Provider
 export interface LLMProviderInfo {
@@ -263,7 +268,7 @@ export const getMergeRequestActivity = (params: {
   days?: number
   compare?: boolean
   limit?: number
-}) => api.get<MergeRequestActivityResponse>('/gitlab/activity', { params })
+}) => api.get<MergeRequestActivityResponse>('/code/activity', { params })
 
 export interface AlertItem {
   alert_key: string
@@ -429,6 +434,6 @@ export const getTeamSummaryWithCompare = (days = 30) =>
     teams: Record<string, number>
     period_days: number
     deltas?: Record<string, { current: number; previous: number; delta: number; pct_change: number | null }>
-  }>('/gitlab/team-summary', { params: { days, compare: true } })
+  }>('/code/team-summary', { params: { days, compare: true } })
 export const getTeamTrend = (team: string, days = 90) =>
-  api.get<TeamTrend>('/gitlab/team-trend', { params: { team, days } })
+  api.get<TeamTrend>('/code/team-trend', { params: { team, days } })

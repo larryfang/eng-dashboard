@@ -175,7 +175,7 @@ export default function EngineerDetail() {
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-800 border border-gray-700 text-gray-300 hover:text-white hover:border-gray-500 disabled:opacity-40 transition-colors"
           >
             <RefreshCw size={13} className={syncing ? 'animate-spin' : ''} />
-            {syncing ? 'Syncing…' : 'Sync from GitLab'}
+            {syncing ? 'Syncing…' : 'Sync Activity'}
           </button>
         </div>
       </div>

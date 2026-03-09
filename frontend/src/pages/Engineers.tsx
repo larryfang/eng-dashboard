@@ -205,8 +205,12 @@ export default function Engineers() {
           <tbody>
             {sorted.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
-                  No engineers found
+                <td colSpan={6} className="px-4 py-12 text-center text-gray-500">
+                  <p className="text-sm">No engineers found.</p>
+                  <p className="text-xs text-gray-600 mt-2">
+                    Add team members to <code className="text-gray-400">organization.yaml</code> and sync your code platform in{' '}
+                    <a href="/settings" className="text-blue-400 hover:underline">Settings</a>.
+                  </p>
                 </td>
               </tr>
             ) : (

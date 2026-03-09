@@ -57,7 +57,9 @@ orgs/
 *.swp
 *.swo
 
-# ── Domain DBs (ecosystem.db etc.) ───────────────────────────────────────────
+# ── Data files (DBs, caches, Snyk CSVs) ──────────────────────────────────────
+data/*.db
+data/*.csv
 data/domains/*.db
 data/domains/*.db-shm
 data/domains/*.db-wal

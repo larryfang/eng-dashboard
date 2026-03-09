@@ -295,7 +295,7 @@ export default function ServicesPage() {
           <button
             onClick={handleEnrichVersions}
             disabled={enriching}
-            title="Scan GitLab repos to detect language versions (e.g. Java 17, Python 3.11)"
+            title="Scan repos to detect language versions (e.g. Java 17, Python 3.11)"
             className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-gray-400 text-xs transition-colors disabled:opacity-50"
           >
             <span className={enriching ? 'animate-spin inline-block' : ''}>⚙</span>

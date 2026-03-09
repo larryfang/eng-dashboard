@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Activity, Brain, Check, Download, Eye, EyeOff, PauseCircle, PlayCircle, RefreshCw, ShieldCheck, Trash2, Wrench, X } from 'lucide-react'
 import {
   getConfig,
-  getGitLabHealth,
+  getCodePlatformHealth,
   getLLMStatus,
   getPortStatus,
   getSyncHistory,
@@ -13,7 +13,7 @@ import {
   saveLLMKeys,
   validateConfig,
   type ConfigValidationResponse,
-  type GitLabHealthResponse,
+  type CodePlatformHealthResponse,
   type LLMStatusResponse,
   type OrgConfig,
   type PortStatusResponse,
@@ -35,7 +35,7 @@ import { downloadCsv } from '../utils/export'
 export default function SettingsPage() {
   const [config, setConfig] = useState<OrgConfig | null>(null)
   const [validation, setValidation] = useState<ConfigValidationResponse | null>(null)
-  const [gitlabHealth, setGitlabHealth] = useState<GitLabHealthResponse | null>(null)
+  const [gitlabHealth, setGitlabHealth] = useState<CodePlatformHealthResponse | null>(null)
   const [portStatus, setPortStatus] = useState<PortStatusResponse | null>(null)
   const [schedule, setSchedule] = useState<SchedulerState | null>(null)
   const [history, setHistory] = useState<SyncHistoryRun[]>([])
@@ -57,7 +57,7 @@ export default function SettingsPage() {
 
     Promise.all([
       getConfig(),
-      getGitLabHealth(),
+      getCodePlatformHealth(),
       getPortStatus(),
       getSyncSchedule(),
       getSyncHistory(undefined, 20),

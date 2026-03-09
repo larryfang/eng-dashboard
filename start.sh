@@ -52,6 +52,12 @@ mkdir -p data/domains
 echo "Syncing Python dependencies..."
 uv sync --frozen 2>/dev/null || uv sync
 
+# Check for LLM extras
+if ! python -c "import anthropic" 2>/dev/null && ! python -c "import openai" 2>/dev/null; then
+  echo "Note: AI summaries disabled. Run 'uv sync --extra llm' and add API keys to .env to enable."
+  echo ""
+fi
+
 # Install frontend dependencies if needed
 if [ -d "frontend" ] && [ ! -d "frontend/node_modules" ]; then
   echo "Installing frontend dependencies..."

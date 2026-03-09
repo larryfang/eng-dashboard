@@ -59,7 +59,7 @@ export default function SyncStatusBadge({ syncInfo, onRefresh, loading, schedule
       {!isSyncing && (
         <button
           onClick={() => onRefresh(true)}
-          title="Clear cached data and re-sync from GitLab"
+          title="Clear cached data and re-sync"
           className="text-orange-400 hover:text-orange-300 transition-colors"
         >
           ⟳ Reset
