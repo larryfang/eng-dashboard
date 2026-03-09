@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import axios from 'axios'
+import axios, { AxiosError } from 'axios'
 import {
   AlertCircle,
   ArrowRight,
@@ -715,8 +715,8 @@ export default function Setup({ onComplete, isNewDomain = false }: SetupProps) {
       if (!silent && (response.data.groups ?? []).length === 0) {
         setGroupsError('No subgroups were found under that GitLab base group.')
       }
-    } catch (error: any) {
-      const detail = error.response?.data?.detail ?? 'GitLab discovery failed'
+    } catch (error: unknown) {
+      const detail = error instanceof AxiosError ? error.response?.data?.detail ?? 'GitLab discovery failed' : 'GitLab discovery failed'
       setGroupsError(detail)
     } finally {
       setDiscoveringGroups(false)
@@ -743,8 +743,8 @@ export default function Setup({ onComplete, isNewDomain = false }: SetupProps) {
       if (!silent && (response.data.projects ?? []).length === 0) {
         setProjectsError('Jira connected, but no software projects were returned.')
       }
-    } catch (error: any) {
-      const detail = error.response?.data?.detail ?? 'Jira project discovery failed'
+    } catch (error: unknown) {
+      const detail = error instanceof AxiosError ? error.response?.data?.detail ?? 'Jira project discovery failed' : 'Jira project discovery failed'
       setProjectsError(detail)
     } finally {
       setDiscoveringProjects(false)
@@ -767,8 +767,8 @@ export default function Setup({ onComplete, isNewDomain = false }: SetupProps) {
       if (!silent && (response.data.teams ?? []).length === 0) {
         setGithubTeamsError('No teams found in this organization.')
       }
-    } catch (error: any) {
-      setGithubTeamsError(error.response?.data?.detail ?? 'GitHub team discovery failed')
+    } catch (error: unknown) {
+      setGithubTeamsError(error instanceof AxiosError ? error.response?.data?.detail ?? 'GitHub team discovery failed' : 'GitHub team discovery failed')
     } finally {
       setDiscoveringGithubTeams(false)
     }
@@ -833,10 +833,11 @@ export default function Setup({ onComplete, isNewDomain = false }: SetupProps) {
       if (followUps.length > 0) {
         await Promise.all(followUps)
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const detail = error instanceof AxiosError ? error.response?.data?.detail ?? 'Validation failed' : 'Validation failed'
       setValidation({
-        gitlab: codePlatform === 'gitlab' ? { ok: false, error: error.response?.data?.detail ?? 'Validation failed' } : null,
-        github: codePlatform === 'github' ? { ok: false, error: error.response?.data?.detail ?? 'Validation failed' } : null,
+        gitlab: codePlatform === 'gitlab' ? { ok: false, error: detail } : null,
+        github: codePlatform === 'github' ? { ok: false, error: detail } : null,
       })
     } finally {
       setValidating(false)
