@@ -47,6 +47,7 @@ class RefTeam(DomainBase):
     em_name     = Column(String)
     em_email    = Column(String)
     products    = Column(Text)                             # JSON array
+    git_provider= Column(String, default="gitlab")
     updated_at  = Column(DateTime, default=utc_now, onupdate=utc_now)
 
     __table_args__ = (
@@ -114,6 +115,7 @@ class MRActivity(DomainBase):
     lines_removed   = Column(Integer)
     files_changed   = Column(Integer)
     cycle_time_hours= Column(Float)
+    provider        = Column(String, default="gitlab")
     synced_at       = Column(DateTime, default=utc_now)
 
     __table_args__ = (
