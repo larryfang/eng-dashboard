@@ -1011,7 +1011,7 @@ export default function Setup({ onComplete, isNewDomain = false }: SetupProps) {
           })
           return {
             index,
-            members: (response.data.members ?? []).map((member: any) => ({
+            members: (response.data.members ?? []).map((member: { username?: string; name?: string }) => ({
               username: member.username || '',
               name: member.name || member.username || '',
               email: '',
@@ -1029,7 +1029,7 @@ export default function Setup({ onComplete, isNewDomain = false }: SetupProps) {
         })
         return {
           index,
-          members: (response.data.members ?? []).map((member: any) => ({
+          members: (response.data.members ?? []).map((member: { username?: string; name?: string; role?: string }) => ({
             username: member.username || '',
             name: member.name || member.username || '',
             email: '',
@@ -1161,8 +1161,8 @@ export default function Setup({ onComplete, isNewDomain = false }: SetupProps) {
         if (done) return
       }
       onComplete()
-    } catch (error: any) {
-      setCreateError(error.response?.data?.detail ?? 'Failed to create the domain')
+    } catch (error: unknown) {
+      setCreateError(error instanceof AxiosError ? error.response?.data?.detail ?? 'Failed to create the domain' : 'Failed to create the domain')
     } finally {
       setCreating(false)
     }
