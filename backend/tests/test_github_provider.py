@@ -1,9 +1,12 @@
 """Tests for GitHub provider support."""
 import pytest
 from datetime import datetime, timezone
+from unittest.mock import MagicMock
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from backend.models_domain import DomainBase, MRActivity, RefTeam, RefMember
+from backend.services.git_providers.base import GitProvider
+from backend.services.git_providers.gitlab_provider import GitLabProvider
 
 
 def _make_db():
@@ -80,3 +83,42 @@ class TestGitProviderInterface:
 
         with pytest.raises(TypeError):
             GitProvider()  # Cannot instantiate abstract class
+
+
+class TestGitLabProvider:
+    def test_implements_git_provider(self):
+        provider = GitLabProvider(url="https://gitlab.com", token="test-token")
+        assert isinstance(provider, GitProvider)
+
+    def test_fetch_pull_requests(self, monkeypatch):
+        """GitLabProvider.fetch_pull_requests calls GitLab MR API with scope=all."""
+        mock_response = MagicMock()
+        mock_response.json.return_value = [
+            {
+                "iid": 42,
+                "project_id": 123,
+                "title": "Fix bug",
+                "source_branch": "fix/PLAT-99",
+                "state": "merged",
+                "created_at": "2026-01-01T00:00:00Z",
+                "merged_at": "2026-01-02T12:00:00Z",
+                "web_url": "https://gitlab.com/group/proj/-/merge_requests/42",
+                "author": {"username": "jdoe"},
+            },
+        ]
+        mock_response.raise_for_status = MagicMock()
+
+        provider = GitLabProvider(url="https://gitlab.com", token="test-token")
+        monkeypatch.setattr(provider._http, "get", lambda *a, **kw: mock_response)
+
+        prs = provider.fetch_pull_requests("jdoe", "2026-01-01T00:00:00Z")
+        assert len(prs) == 1
+        assert prs[0].pr_iid == 42
+        assert prs[0].repo_id == "123"
+        assert prs[0].state == "merged"
+
+    def test_close_closes_http_session(self):
+        provider = GitLabProvider(url="https://gitlab.com", token="test")
+        provider._http.close = MagicMock()
+        provider.close()
+        provider._http.close.assert_called_once()
