@@ -66,6 +66,7 @@ def seed_reference_data(db: Session, domain_slug: str | None = None) -> Dict[str
         existing_team.em_name = team.lead
         existing_team.em_email = team.lead_email
         existing_team.products = json.dumps(team.products) if team.products else None
+        existing_team.git_provider = getattr(team, "git_provider", "gitlab") or "gitlab"
 
         team_count += 1
 

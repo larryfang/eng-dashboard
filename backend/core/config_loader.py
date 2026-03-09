@@ -93,6 +93,9 @@ class Team:
     # DORA metrics
     port_team_id: Optional[str] = None
 
+    # Git provider: "gitlab" or "github"
+    git_provider: str = "gitlab"
+
     # Team members
     gitlab_members: List[TeamMember] = field(default_factory=list)
     github_members: List[TeamMember] = field(default_factory=list)
@@ -536,6 +539,9 @@ class ConfigLoader:
         teams = []
         for t in raw.get("teams", []):
             # Parse team members
+            # "members" is the preferred field; fall back to "gitlab_members"
+            # for backward compatibility with existing configs.
+            raw_members = t.get("members") or t.get("gitlab_members") or []
             gitlab_members = [
                 TeamMember(
                     username=m["username"],
@@ -546,7 +552,7 @@ class ConfigLoader:
                     jira_account_id=m.get("jira_account_id"),
                     email=m.get("email"),
                 )
-                for m in t.get("gitlab_members", [])
+                for m in raw_members
             ]
             github_members = [
                 TeamMember(
@@ -590,6 +596,7 @@ class ConfigLoader:
                 additional_gitlab_paths=t.get("additional_gitlab_paths", []),
                 snyk_org=t.get("snyk_org"),
                 port_team_id=t.get("port_team_id"),
+                git_provider=t.get("git_provider", "gitlab"),
                 gitlab_members=gitlab_members,
                 github_members=github_members,
             ))
