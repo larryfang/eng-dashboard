@@ -33,7 +33,11 @@ def _utc_naive_now() -> datetime:
 
 
 @pytest.mark.asyncio
-async def test_merge_request_activity_handles_team_alias_and_naive_datetimes():
+async def test_merge_request_activity_handles_team_alias_and_naive_datetimes(monkeypatch):
+    # Bypass real config so normalize_team_name doesn't map "Platform" to a real team
+    monkeypatch.setattr(
+        "backend.config.gitlab_teams.normalize_team_name", lambda name: name.strip().lower()
+    )
     db_session = _make_db_session()
     try:
         created_at = _utc_naive_now() - timedelta(days=2)
@@ -71,7 +75,10 @@ async def test_merge_request_activity_handles_team_alias_and_naive_datetimes():
 
 
 @pytest.mark.asyncio
-async def test_merge_request_activity_filters_active_state():
+async def test_merge_request_activity_filters_active_state(monkeypatch):
+    monkeypatch.setattr(
+        "backend.config.gitlab_teams.normalize_team_name", lambda name: name.strip().lower()
+    )
     db_session = _make_db_session()
     try:
         now = _utc_naive_now()

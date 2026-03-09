@@ -45,10 +45,17 @@ if ! command -v npm &> /dev/null; then
   exit 1
 fi
 
+# Ensure data directories exist
+mkdir -p data/domains
+
+# Install Python dependencies
+echo "Syncing Python dependencies..."
+uv sync --frozen 2>/dev/null || uv sync
+
 # Install frontend dependencies if needed
 if [ -d "frontend" ] && [ ! -d "frontend/node_modules" ]; then
   echo "Installing frontend dependencies..."
-  cd frontend && npm install && cd ..
+  cd frontend && npm ci && cd ..
 fi
 
 echo "Starting Engineering Director Dashboard..."

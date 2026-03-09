@@ -163,6 +163,16 @@ cd frontend && npm run dev
 ./start.sh
 ```
 
+### Running tests
+
+```bash
+# Backend tests
+uv run pytest
+
+# Frontend lint + type-check + build
+cd frontend && npm run lint && npm run build
+```
+
 ### Sync GitLab data
 
 The dashboard needs an initial sync to populate metrics:
