@@ -52,3 +52,31 @@ class TestProviderColumns:
         db.commit()
         row = db.query(RefTeam).first()
         assert row.git_provider == "gitlab"
+
+
+class TestGitProviderInterface:
+    def test_pull_request_data_is_a_dataclass(self):
+        from backend.services.git_providers.base import GitProvider, PullRequestData
+
+        pr = PullRequestData(
+            pr_iid=1,
+            repo_id="org/repo",
+            title="Add feature",
+            source_branch="feat/x",
+            author_username="jdoe",
+            state="merged",
+            created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            merged_at=datetime(2026, 1, 2, tzinfo=timezone.utc),
+            web_url="https://github.com/org/repo/pull/1",
+            lines_added=10,
+            lines_removed=5,
+            files_changed=2,
+        )
+        assert pr.pr_iid == 1
+        assert pr.repo_id == "org/repo"
+
+    def test_git_provider_is_abstract(self):
+        from backend.services.git_providers.base import GitProvider
+
+        with pytest.raises(TypeError):
+            GitProvider()  # Cannot instantiate abstract class
