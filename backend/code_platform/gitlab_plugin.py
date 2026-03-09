@@ -8,7 +8,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
-from .base import (
+from backend.code_platform.base import (
     CodePlatformPlugin,
     DORAMetrics,
     MergeRequest,
@@ -16,8 +16,9 @@ from .base import (
     Repository,
     SearchResult,
 )
-from ..base import PluginConfig
-from ...services.gitlab_intelligence import (
+from backend.base import PluginConfig
+from backend.plugins.registry import register
+from backend.services.gitlab_intelligence import (
     GitLabCollector,
     DORAService,
     RepoScanner,
@@ -31,6 +32,7 @@ from ...services.gitlab_intelligence import (
 logger = logging.getLogger(__name__)
 
 
+@register("code_platform", "gitlab")
 class GitLabPlugin(CodePlatformPlugin):
     """
     GitLab integration via the existing gitlab_intelligence module.

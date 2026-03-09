@@ -155,6 +155,18 @@ from backend.routers.alerts_router import router as alerts_router
 
 app.include_router(alerts_router)
 
+# Provider capabilities router
+from backend.routers.providers_router import router as providers_router
+
+app.include_router(providers_router)
+
+# Provider-agnostic alias routers
+from backend.routers.code_router import router as code_router
+from backend.routers.issues_router import router as issues_router
+
+app.include_router(code_router)
+app.include_router(issues_router)
+
 
 @app.get("/health")
 async def health():

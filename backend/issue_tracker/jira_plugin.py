@@ -12,13 +12,15 @@ from typing import Dict, List, Optional, Any
 
 import requests
 
-from .base import IssueTrackerPlugin, Epic, Sprint, Issue
-from ..base import PluginConfig
-from ...core.config_loader import get_config
+from backend.issue_tracker.base import IssueTrackerPlugin, Epic, Sprint, Issue
+from backend.base import PluginConfig
+from backend.core.config_loader import get_config
+from backend.plugins.registry import register
 
 logger = logging.getLogger(__name__)
 
 
+@register("issue_tracker", "jira")
 class JiraPlugin(IssueTrackerPlugin):
     """
     Jira Cloud integration via REST API.

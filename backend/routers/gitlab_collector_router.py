@@ -1015,6 +1015,7 @@ async def get_upgrades_needed(
 # ==================== Engineer Endpoints ====================
 
 from backend.services.engineer_sync_service import _fetch_commit_count, _fetch_review_count
+from backend.services.git_providers.factory import create_provider
 
 
 @router.get("/engineers")
@@ -1203,21 +1204,27 @@ async def get_engineer(
 
     if stats_row is None:
         # First visit for this engineer+period — fetch live and cache for next time
-        import requests as _req
-        gitlab_settings = get_gitlab_settings()
-        gitlab_token = gitlab_settings["token"]
-        gitlab_url = gitlab_settings["url"]
+        from backend.models_domain import RefTeam
         since_iso = since.strftime("%Y-%m-%dT%H:%M:%SZ")
-        if gitlab_token:
-            http = _req.Session()
-            http.headers["PRIVATE-TOKEN"] = gitlab_token
+
+        # Determine the correct git provider from the engineer's team
+        team = db.query(RefTeam).filter_by(slug=member.team_slug).first() if member else None
+        provider_name = (team.git_provider if team else None) or "gitlab"
+
+        try:
+            provider = create_provider(provider_name)
+        except (RuntimeError, ValueError) as exc:
+            logger.warning(f"Could not create {provider_name} provider for {username}: {exc}")
+            provider = None
+
+        if provider is not None:
             try:
                 commit_count, review_count = await asyncio.gather(
-                    asyncio.to_thread(_fetch_commit_count, gitlab_url, http, username, since_iso),
-                    asyncio.to_thread(_fetch_review_count, gitlab_url, http, username, since_iso),
+                    asyncio.to_thread(provider.fetch_commit_count, username, since_iso),
+                    asyncio.to_thread(provider.fetch_review_count, username, since_iso),
                 )
             finally:
-                http.close()
+                provider.close()
             db.add(EngineerStats(
                 username=username.lower(),
                 period_days=days,
@@ -1280,14 +1287,13 @@ async def sync_engineer(
     db: Session = Depends(get_ecosystem_session),
 ):
     """
-    Re-sync MR activity for a single engineer from GitLab.
-    Fetches with scope=all so all projects are covered.
+    Re-sync MR activity for a single engineer from the appropriate git provider.
+    Detects the team's git_provider (gitlab/github) and uses the correct provider.
     """
     import asyncio
-    import requests as _req
     from datetime import datetime, timedelta, timezone
-    from backend.models_domain import RefMember, EngineerStats
-    from backend.services.engineer_sync_service import _fetch_mrs, _upsert_mrs, _build_jira_pattern
+    from backend.models_domain import RefMember, RefTeam, EngineerStats
+    from backend.services.engineer_sync_service import _upsert_prs, _build_jira_pattern
     from backend.core.config_loader import get_domain_config
     from backend.services.domain_registry import get_active_slug
 
@@ -1297,11 +1303,17 @@ async def sync_engineer(
     if not member:
         raise HTTPException(status_code=404, detail=f"Engineer not found: {username}")
 
-    gitlab_settings = get_gitlab_settings()
-    gitlab_token = gitlab_settings["token"]
-    gitlab_url = gitlab_settings["url"]
-    if not gitlab_token:
-        raise HTTPException(status_code=503, detail="GitLab credentials are not configured for the active domain")
+    # Determine the correct git provider from the engineer's team
+    team = db.query(RefTeam).filter_by(slug=member.team_slug).first()
+    provider_name = (team.git_provider if team else None) or "gitlab"
+
+    try:
+        provider = create_provider(provider_name)
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"{provider_name.title()} credentials are not configured for the active domain",
+        )
 
     since = datetime.now(timezone.utc) - timedelta(days=days)
     since_iso = since.strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -1309,22 +1321,20 @@ async def sync_engineer(
     cfg = get_domain_config(get_active_slug())
     jira_pattern = _build_jira_pattern(cfg.jira_project_keys)
 
-    http = _req.Session()
-    http.headers["PRIVATE-TOKEN"] = gitlab_token
     try:
         # Fetch MRs + commit/review counts in parallel (network only)
-        mrs, (commit_count, review_count) = await asyncio.gather(
-            asyncio.to_thread(_fetch_mrs, gitlab_url, http, member.gitlab_username, since_iso),
+        prs, (commit_count, review_count) = await asyncio.gather(
+            asyncio.to_thread(provider.fetch_pull_requests, member.gitlab_username, since_iso),
             asyncio.gather(
-                asyncio.to_thread(_fetch_commit_count, gitlab_url, http, username, since_iso),
-                asyncio.to_thread(_fetch_review_count, gitlab_url, http, username, since_iso),
+                asyncio.to_thread(provider.fetch_commit_count, username, since_iso),
+                asyncio.to_thread(provider.fetch_review_count, username, since_iso),
             ),
         )
     finally:
-        http.close()
+        provider.close()
 
     # Upsert MRs sequentially (DB write)
-    mr_count = _upsert_mrs(db, member, mrs, jira_pattern)
+    mr_count = _upsert_prs(db, member, prs, jira_pattern, provider=provider_name)
 
     # Upsert engineer_stats cache
     stats_row = db.query(EngineerStats).filter(
@@ -1351,13 +1361,16 @@ def _preload_engineer_stats(gitlab_url: str, gitlab_token: str, periods=None):
     """
     Pre-warm EngineerStats cache for all active engineers across all UI periods.
 
-    Fetches commit + review counts in parallel (thread pool), then writes all
-    results to the DB in a single session. Called automatically after bulk sync.
+    Groups engineers by their team's git_provider, creates one provider instance
+    per provider type, and fetches commit + review counts in parallel (thread pool).
+    Writes all results to the DB in a single session.
+    Called automatically after bulk sync.
     """
     from datetime import datetime, timedelta, timezone
+    from collections import defaultdict
     from concurrent.futures import ThreadPoolExecutor, as_completed
     from backend.database_domain import create_ecosystem_session
-    from backend.models_domain import RefMember, EngineerStats
+    from backend.models_domain import RefMember, RefTeam, EngineerStats
 
     if periods is None:
         periods = [30, 60, 90]
@@ -1367,38 +1380,59 @@ def _preload_engineer_stats(gitlab_url: str, gitlab_token: str, periods=None):
         members = session.query(RefMember).filter(
             RefMember.departed == False,
         ).all()
-        usernames = [m.gitlab_username for m in members]
+        # Build a map of username -> provider_name
+        team_slugs = {m.team_slug for m in members}
+        teams = session.query(RefTeam).filter(RefTeam.slug.in_(team_slugs)).all()
+        team_provider_map = {t.slug: (t.git_provider or "gitlab") for t in teams}
+        member_info = [
+            (m.gitlab_username, team_provider_map.get(m.team_slug, "gitlab"))
+            for m in members
+        ]
     finally:
         session.close()
 
-    if not usernames:
+    if not member_info:
         logger.info("EngineerStats preload: no active engineers found")
         return
 
     now = datetime.now(timezone.utc)
     logger.info(
-        f"EngineerStats preload: {len(usernames)} engineers × {len(periods)} periods "
-        f"= {len(usernames) * len(periods)} fetches"
+        f"EngineerStats preload: {len(member_info)} engineers × {len(periods)} periods "
+        f"= {len(member_info) * len(periods)} fetches"
     )
 
-    import requests as _req
+    # Group engineers by provider
+    by_provider: dict[str, list[str]] = defaultdict(list)
+    for username, prov_name in member_info:
+        by_provider[prov_name].append(username)
 
-    def fetch(username: str, days: int):
-        since_iso = (now - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
-        http = _req.Session()
-        http.headers["PRIVATE-TOKEN"] = gitlab_token
+    # Create one provider instance per provider type
+    providers: dict = {}
+    for prov_name in by_provider:
         try:
-            commits = _fetch_commit_count(gitlab_url, http, username, since_iso)
-            reviews = _fetch_review_count(gitlab_url, http, username, since_iso)
-        finally:
-            http.close()
+            providers[prov_name] = create_provider(prov_name)
+        except (RuntimeError, ValueError) as exc:
+            logger.warning(f"Skipping {prov_name} provider for preload: {exc}")
+
+    def fetch(username: str, days: int, provider_name: str):
+        provider = providers.get(provider_name)
+        if provider is None:
+            return username.lower(), days, 0, 0
+        since_iso = (now - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        commits = provider.fetch_commit_count(username, since_iso)
+        reviews = provider.fetch_review_count(username, since_iso)
         return username.lower(), days, commits, reviews
 
     results: dict = {}
-    tasks = [(u, d) for u in usernames for d in periods]
+    tasks = [
+        (username, d, prov_name)
+        for prov_name, usernames in by_provider.items()
+        for username in usernames
+        for d in periods
+    ]
 
     with ThreadPoolExecutor(max_workers=6) as pool:
-        futures = {pool.submit(fetch, u, d): (u, d) for u, d in tasks}
+        futures = {pool.submit(fetch, u, d, p): (u, d) for u, d, p in tasks}
         done = 0
         for fut in as_completed(futures):
             done += 1
@@ -1410,6 +1444,13 @@ def _preload_engineer_stats(gitlab_url: str, gitlab_token: str, periods=None):
                 logger.warning(f"Preload failed for {u}/{d}d: {exc}")
             if done % 20 == 0:
                 logger.info(f"EngineerStats preload progress: {done}/{len(tasks)}")
+
+    # Close all providers
+    for prov in providers.values():
+        try:
+            prov.close()
+        except Exception:
+            pass
 
     # Write all results to DB in a single session (avoids concurrent SQLite writes)
     session = create_ecosystem_session()

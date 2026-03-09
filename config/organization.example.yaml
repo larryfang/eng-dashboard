@@ -24,14 +24,17 @@ user:
 
 # =============================================================================
 # Teams
-# Each team needs: key (Jira project prefix), name, gitlab_path, and members.
+# Each team needs: key (Jira project prefix), name, and members.
+# Use git_provider to specify gitlab or github per team.
 # =============================================================================
 
 teams:
+  # --- GitLab team example ---
   - key: PLAT                           # Jira project key (e.g., PLAT-123)
     name: Platform                      # Business/product name
     slug: platform                      # Used in API calls and URLs
     scrum_name: Phoenix                 # Scrum team name (if different from name)
+    git_provider: gitlab                # gitlab | github (default: gitlab)
     aliases:
       - phoenix
     lead: Jordan Lee
@@ -47,8 +50,8 @@ teams:
       - acme/platform/infrastructure
     snyk_org: ""                        # Optional: Snyk org name for security metrics
     port_team_id: ""                    # Optional: Port.io team identifier
-    gitlab_members:
-      - username: jlee                  # GitLab username
+    members:                            # Preferred field name (gitlab_members still works for backward compat)
+      - username: jlee                  # GitLab/GitHub username
         name: Jordan Lee
         role: TL                        # TL, engineer, senior, qa, etc.
         exclude_from_metrics: false
@@ -62,10 +65,12 @@ teams:
         name: Sam Wilson
         role: engineer
 
+  # --- GitHub team example ---
   - key: INT
     name: Integrations
     slug: integrations
     scrum_name: Cosmos
+    git_provider: github                # This team uses GitHub
     aliases:
       - cosmos
     lead: Taylor Kim
@@ -77,10 +82,12 @@ teams:
       - HubSpot Connector
       - Zapier Integration
     jira_project: INT
-    gitlab_path: acme/integrations
+    github_repos:                       # GitHub repos (used when git_provider is github)
+      - acme/integrations
+      - acme/integration-sdk
     snyk_org: ""
     port_team_id: ""
-    gitlab_members:
+    members:                            # Same field works for both gitlab and github teams
       - username: tkim
         name: Taylor Kim
         role: TL

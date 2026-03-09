@@ -1,3 +1,4 @@
+import json
 import sys
 from pathlib import Path
 
@@ -14,6 +15,7 @@ if str(BACKEND) not in sys.path:
 from backend.config import gitlab_teams  # noqa: E402
 from backend.core import config_loader  # noqa: E402
 from backend.routers import onboard_router  # noqa: E402
+from backend.services import domain_credentials  # noqa: E402
 from backend.services import domain_registry  # noqa: E402
 
 
@@ -54,6 +56,135 @@ async def test_validate_credentials_uses_custom_gitlab_url(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_validate_github_credentials(monkeypatch):
+    def fake_get(url, headers=None, timeout=0, auth=None, params=None):
+        if "api.github.com" in url:
+            return StubResponse(payload={"login": "octocat"})
+        return StubResponse(ok=False, status_code=404)
+
+    monkeypatch.setattr(onboard_router.requests, "get", fake_get)
+
+    result = await onboard_router.validate_credentials(
+        onboard_router.ValidateRequest(github_token="ghp_test123")
+    )
+
+    assert result["github"] == {"ok": True, "user": "octocat", "error": None}
+    # Other providers not supplied should be None
+    assert result["gitlab"] is None
+    assert result["jira"] is None
+
+
+@pytest.mark.asyncio
+async def test_validate_linear_credentials(monkeypatch):
+    def fake_post(url, headers=None, json=None, timeout=0):
+        if "linear.app" in url:
+            return StubResponse(payload={"data": {"viewer": {"id": "1", "name": "Lin User"}}})
+        return StubResponse(ok=False, status_code=404)
+
+    monkeypatch.setattr(onboard_router.requests, "get", lambda *a, **kw: StubResponse(ok=False, status_code=404))
+    monkeypatch.setattr(onboard_router.requests, "post", fake_post)
+
+    result = await onboard_router.validate_credentials(
+        onboard_router.ValidateRequest(linear_api_key="lin_test123")
+    )
+
+    assert result["linear"] == {"ok": True, "user": "Lin User", "error": None}
+
+
+@pytest.mark.asyncio
+async def test_validate_monday_credentials(monkeypatch):
+    def fake_post(url, headers=None, json=None, timeout=0):
+        if "monday.com" in url:
+            return StubResponse(payload={"data": {"me": {"id": "1", "name": "Monday User"}}})
+        return StubResponse(ok=False, status_code=404)
+
+    monkeypatch.setattr(onboard_router.requests, "get", lambda *a, **kw: StubResponse(ok=False, status_code=404))
+    monkeypatch.setattr(onboard_router.requests, "post", fake_post)
+
+    result = await onboard_router.validate_credentials(
+        onboard_router.ValidateRequest(monday_token="mon_test123")
+    )
+
+    assert result["monday"] == {"ok": True, "user": "Monday User", "error": None}
+
+
+@pytest.mark.asyncio
+async def test_validate_asana_credentials(monkeypatch):
+    def fake_get(url, headers=None, timeout=0, auth=None, params=None):
+        if "asana.com" in url:
+            return StubResponse(payload={"data": {"name": "Asana User"}})
+        return StubResponse(ok=False, status_code=404)
+
+    monkeypatch.setattr(onboard_router.requests, "get", fake_get)
+
+    result = await onboard_router.validate_credentials(
+        onboard_router.ValidateRequest(asana_token="asana_test123")
+    )
+
+    assert result["asana"] == {"ok": True, "user": "Asana User", "error": None}
+
+
+@pytest.mark.asyncio
+async def test_validate_openai_credentials(monkeypatch):
+    def fake_get(url, headers=None, timeout=0, auth=None, params=None):
+        if "api.openai.com" in url:
+            return StubResponse(payload={"data": [{"id": "gpt-4"}]})
+        return StubResponse(ok=False, status_code=404)
+
+    monkeypatch.setattr(onboard_router.requests, "get", fake_get)
+
+    result = await onboard_router.validate_credentials(
+        onboard_router.ValidateRequest(openai_api_key="sk-test123")
+    )
+
+    assert result["openai"] == {"ok": True, "user": None, "error": None}
+
+
+@pytest.mark.asyncio
+async def test_validate_anthropic_credentials(monkeypatch):
+    def fake_get(url, headers=None, timeout=0, auth=None, params=None):
+        if "api.anthropic.com" in url:
+            return StubResponse(payload={"data": [{"id": "claude-3"}]})
+        return StubResponse(ok=False, status_code=404)
+
+    monkeypatch.setattr(onboard_router.requests, "get", fake_get)
+
+    result = await onboard_router.validate_credentials(
+        onboard_router.ValidateRequest(anthropic_api_key="sk-ant-test123")
+    )
+
+    assert result["anthropic"] == {"ok": True, "user": None, "error": None}
+
+
+@pytest.mark.asyncio
+async def test_validate_snyk_credentials(monkeypatch):
+    def fake_get(url, headers=None, timeout=0, auth=None, params=None):
+        if "api.snyk.io" in url:
+            return StubResponse(payload={"data": {"attributes": {"name": "Snyk User"}}})
+        return StubResponse(ok=False, status_code=404)
+
+    monkeypatch.setattr(onboard_router.requests, "get", fake_get)
+
+    result = await onboard_router.validate_credentials(
+        onboard_router.ValidateRequest(snyk_token="snyk_test123")
+    )
+
+    assert result["snyk"] == {"ok": True, "user": "Snyk User", "error": None}
+
+
+@pytest.mark.asyncio
+async def test_validate_empty_request_returns_all_null(monkeypatch):
+    result = await onboard_router.validate_credentials(
+        onboard_router.ValidateRequest()
+    )
+
+    expected_keys = ["gitlab", "github", "jira", "linear", "monday", "asana", "openai", "anthropic", "snyk"]
+    for key in expected_keys:
+        assert key in result, f"Missing key: {key}"
+        assert result[key] is None, f"Expected {key} to be None, got {result[key]}"
+
+
+@pytest.mark.asyncio
 async def test_discover_gitlab_members_uses_members_all_endpoint(monkeypatch):
     calls = []
 
@@ -75,6 +206,49 @@ async def test_discover_gitlab_members_uses_members_all_endpoint(monkeypatch):
 
     assert result == {"members": [{"username": "alice", "name": "Alice", "role": "TL"}]}
     assert calls[0] == "https://gitlab.example.internal/api/v4/groups/acme%2Fplatform%2Fteam-alpha/members/all"
+
+
+@pytest.mark.asyncio
+async def test_discover_github_orgs(monkeypatch):
+    def fake_get(url, headers=None, params=None, timeout=0):
+        return StubResponse(payload=[
+            {"login": "my-org", "description": "Main org"},
+            {"login": "side-project", "description": ""},
+        ])
+    monkeypatch.setattr(onboard_router.requests, "get", fake_get)
+    result = await onboard_router.discover_github_orgs(
+        StubRequest(headers={"x-github-token": "ghp_test"}), token=None,
+    )
+    assert len(result["orgs"]) == 2
+    assert result["orgs"][0]["login"] == "my-org"
+
+
+@pytest.mark.asyncio
+async def test_discover_github_teams(monkeypatch):
+    def fake_get(url, headers=None, params=None, timeout=0):
+        return StubResponse(payload=[
+            {"slug": "platform", "name": "Platform", "description": "Core infra"},
+        ])
+    monkeypatch.setattr(onboard_router.requests, "get", fake_get)
+    result = await onboard_router.discover_github_teams(
+        StubRequest(headers={"x-github-token": "ghp_test"}), token=None, org="my-org",
+    )
+    assert len(result["teams"]) == 1
+    assert result["teams"][0]["slug"] == "platform"
+
+
+@pytest.mark.asyncio
+async def test_discover_github_team_members(monkeypatch):
+    def fake_get(url, headers=None, params=None, timeout=0):
+        return StubResponse(payload=[
+            {"login": "alice", "type": "User"},
+        ])
+    monkeypatch.setattr(onboard_router.requests, "get", fake_get)
+    result = await onboard_router.discover_github_members(
+        StubRequest(headers={"x-github-token": "ghp_test"}), token=None, org="my-org", team_slug="platform",
+    )
+    assert len(result["members"]) == 1
+    assert result["members"][0]["username"] == "alice"
 
 
 def test_get_config_tracks_active_domain_and_refreshes_gitlab_team_cache(tmp_path, monkeypatch):
@@ -126,3 +300,40 @@ def test_get_config_tracks_active_domain_and_refreshes_gitlab_team_cache(tmp_pat
     beta_config = config_loader.get_config()
     assert beta_config.slug == "beta"
     assert gitlab_teams.TEAM_GITLAB_PATHS["beta"] == ["acme/platform/beta"]
+
+
+def test_get_github_settings_reads_from_secrets(tmp_path, monkeypatch):
+    secrets_file = tmp_path / "test-domain.secrets.json"
+    secrets_file.write_text(json.dumps({"github": {"token": "ghp_123", "org": "acme"}}))
+    monkeypatch.setattr(domain_credentials, "DOMAIN_DATA_DIR", tmp_path)
+    monkeypatch.setattr(domain_credentials, "_slug", lambda s: "test-domain")
+    result = domain_credentials.get_github_settings("test-domain")
+    assert result["token"] == "ghp_123"
+    assert result["org"] == "acme"
+
+
+def test_get_linear_settings_reads_from_secrets(tmp_path, monkeypatch):
+    secrets_file = tmp_path / "test-domain.secrets.json"
+    secrets_file.write_text(json.dumps({"linear": {"api_key": "lin_abc"}}))
+    monkeypatch.setattr(domain_credentials, "DOMAIN_DATA_DIR", tmp_path)
+    monkeypatch.setattr(domain_credentials, "_slug", lambda s: "test-domain")
+    result = domain_credentials.get_linear_settings("test-domain")
+    assert result["api_key"] == "lin_abc"
+
+
+def test_get_monday_settings_reads_from_secrets(tmp_path, monkeypatch):
+    secrets_file = tmp_path / "test-domain.secrets.json"
+    secrets_file.write_text(json.dumps({"monday": {"token": "mon_xyz"}}))
+    monkeypatch.setattr(domain_credentials, "DOMAIN_DATA_DIR", tmp_path)
+    monkeypatch.setattr(domain_credentials, "_slug", lambda s: "test-domain")
+    result = domain_credentials.get_monday_settings("test-domain")
+    assert result["token"] == "mon_xyz"
+
+
+def test_get_asana_settings_reads_from_secrets(tmp_path, monkeypatch):
+    secrets_file = tmp_path / "test-domain.secrets.json"
+    secrets_file.write_text(json.dumps({"asana": {"token": "asana_abc"}}))
+    monkeypatch.setattr(domain_credentials, "DOMAIN_DATA_DIR", tmp_path)
+    monkeypatch.setattr(domain_credentials, "_slug", lambda s: "test-domain")
+    result = domain_credentials.get_asana_settings("test-domain")
+    assert result["token"] == "asana_abc"

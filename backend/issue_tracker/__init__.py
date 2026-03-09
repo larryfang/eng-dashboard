@@ -6,9 +6,9 @@ Supports:
 - GitHub Issues (GitHubIssuesPlugin)
 """
 
-from .base import IssueTrackerPlugin, Epic, Sprint, Issue
-from .jira_plugin import JiraPlugin
-from .github_plugin import GitHubIssuesPlugin
+from backend.issue_tracker.base import IssueTrackerPlugin, Epic, Sprint, Issue
+from backend.issue_tracker.jira_plugin import JiraPlugin
+from backend.issue_tracker.github_plugin import GitHubIssuesPlugin
 
 __all__ = [
     "IssueTrackerPlugin",

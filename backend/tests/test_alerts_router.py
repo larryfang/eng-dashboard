@@ -46,7 +46,7 @@ STALLED_EPICS = [
         "epic_key": "PLAT-101",
         "epic_name": "Improve onboarding",
         "days_stalled": 15,
-        "jira_url": "https://jira.example/browse/PLAT-101",
+        "url": "https://jira.example/browse/PLAT-101",
     }
 ]
 

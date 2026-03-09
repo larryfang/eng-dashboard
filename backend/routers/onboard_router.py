@@ -8,6 +8,9 @@ POST /api/onboard/validate                  → test GitLab + Jira creds
 GET  /api/onboard/discover/gitlab-groups    → list subgroups under a GitLab group path
 GET  /api/onboard/discover/jira-projects    → list Jira projects for a site
 GET  /api/onboard/discover/gitlab-members   → list members of a GitLab group
+GET  /api/onboard/discover/github-orgs      → list GitHub orgs for a token
+GET  /api/onboard/discover/github-teams     → list teams in a GitHub org
+GET  /api/onboard/discover/github-members   → list members of a GitHub team
 POST /api/onboard/create                    → save new domain config + init DB + seed
 """
 import logging
@@ -23,6 +26,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/onboard", tags=["onboard"])
 
 DEFAULT_GITLAB_URL = "https://gitlab.com"
+GITHUB_API = "https://api.github.com"
 CONFIG_DOMAINS_DIR = Path(__file__).resolve().parent.parent.parent / "config" / "domains"
 
 
@@ -34,34 +38,73 @@ def _gitlab_api_base(gitlab_url: str | None = None) -> str:
 # ── Validate ───────────────────────────────────────────────────────────────────
 
 class ValidateRequest(BaseModel):
-    gitlab_token: str
+    # Code platform
+    gitlab_token: Optional[str] = None
     gitlab_url: Optional[str] = None
+    github_token: Optional[str] = None
+    github_org: Optional[str] = None
+    # Issue tracker
     jira_url: Optional[str] = None
     jira_email: Optional[str] = None
     jira_token: Optional[str] = None
+    linear_api_key: Optional[str] = None
+    monday_token: Optional[str] = None
+    asana_token: Optional[str] = None
+    # AI
+    openai_api_key: Optional[str] = None
+    anthropic_api_key: Optional[str] = None
+    # Security
+    snyk_token: Optional[str] = None
+
+
+def _validate_result(ok: bool, user: str | None = None, error: str | None = None) -> dict:
+    """Build a consistent validation result dict."""
+    return {"ok": ok, "user": user, "error": error}
 
 
 @router.post("/validate")
 async def validate_credentials(body: ValidateRequest):
     results: dict = {}
-    gitlab_api = _gitlab_api_base(body.gitlab_url)
 
-    # GitLab
-    try:
-        r = requests.get(
-            f"{gitlab_api}/user",
-            headers={"PRIVATE-TOKEN": body.gitlab_token},
-            timeout=10,
-        )
-        if r.ok:
-            data = r.json()
-            results["gitlab"] = {"ok": True, "user": data.get("username"), "error": None}
-        else:
-            results["gitlab"] = {"ok": False, "user": None, "error": f"HTTP {r.status_code}"}
-    except Exception as e:
-        results["gitlab"] = {"ok": False, "user": None, "error": str(e)}
+    # ── GitLab ────────────────────────────────────────────────────────────
+    if body.gitlab_token:
+        gitlab_api = _gitlab_api_base(body.gitlab_url)
+        try:
+            r = requests.get(
+                f"{gitlab_api}/user",
+                headers={"PRIVATE-TOKEN": body.gitlab_token},
+                timeout=10,
+            )
+            if r.ok:
+                results["gitlab"] = _validate_result(True, user=r.json().get("username"))
+            else:
+                results["gitlab"] = _validate_result(False, error=f"HTTP {r.status_code}")
+        except Exception as e:
+            results["gitlab"] = _validate_result(False, error=str(e))
+    else:
+        results["gitlab"] = None
 
-    # Jira (optional)
+    # ── GitHub ────────────────────────────────────────────────────────────
+    if body.github_token:
+        try:
+            r = requests.get(
+                "https://api.github.com/user",
+                headers={
+                    "Authorization": f"Bearer {body.github_token}",
+                    "Accept": "application/vnd.github+json",
+                },
+                timeout=10,
+            )
+            if r.ok:
+                results["github"] = _validate_result(True, user=r.json().get("login"))
+            else:
+                results["github"] = _validate_result(False, error=f"HTTP {r.status_code}")
+        except Exception as e:
+            results["github"] = _validate_result(False, error=str(e))
+    else:
+        results["github"] = None
+
+    # ── Jira ──────────────────────────────────────────────────────────────
     if body.jira_url and body.jira_email and body.jira_token:
         try:
             r = requests.get(
@@ -70,14 +113,128 @@ async def validate_credentials(body: ValidateRequest):
                 timeout=10,
             )
             if r.ok:
-                data = r.json()
-                results["jira"] = {"ok": True, "user": data.get("displayName"), "error": None}
+                results["jira"] = _validate_result(True, user=r.json().get("displayName"))
             else:
-                results["jira"] = {"ok": False, "user": None, "error": f"HTTP {r.status_code}"}
+                results["jira"] = _validate_result(False, error=f"HTTP {r.status_code}")
         except Exception as e:
-            results["jira"] = {"ok": False, "user": None, "error": str(e)}
+            results["jira"] = _validate_result(False, error=str(e))
     else:
         results["jira"] = None
+
+    # ── Linear ────────────────────────────────────────────────────────────
+    if body.linear_api_key:
+        try:
+            r = requests.post(
+                "https://api.linear.app/graphql",
+                headers={"Authorization": body.linear_api_key},
+                json={"query": "{ viewer { id name } }"},
+                timeout=10,
+            )
+            if r.ok:
+                data = r.json()
+                name = (data.get("data") or {}).get("viewer", {}).get("name")
+                results["linear"] = _validate_result(True, user=name)
+            else:
+                results["linear"] = _validate_result(False, error=f"HTTP {r.status_code}")
+        except Exception as e:
+            results["linear"] = _validate_result(False, error=str(e))
+    else:
+        results["linear"] = None
+
+    # ── Monday.com ────────────────────────────────────────────────────────
+    if body.monday_token:
+        try:
+            r = requests.post(
+                "https://api.monday.com/v2",
+                headers={"Authorization": body.monday_token},
+                json={"query": "{ me { id name } }"},
+                timeout=10,
+            )
+            if r.ok:
+                data = r.json()
+                name = (data.get("data") or {}).get("me", {}).get("name")
+                results["monday"] = _validate_result(True, user=name)
+            else:
+                results["monday"] = _validate_result(False, error=f"HTTP {r.status_code}")
+        except Exception as e:
+            results["monday"] = _validate_result(False, error=str(e))
+    else:
+        results["monday"] = None
+
+    # ── Asana ─────────────────────────────────────────────────────────────
+    if body.asana_token:
+        try:
+            r = requests.get(
+                "https://app.asana.com/api/1.0/users/me",
+                headers={"Authorization": f"Bearer {body.asana_token}"},
+                timeout=10,
+            )
+            if r.ok:
+                data = r.json()
+                name = (data.get("data") or {}).get("name")
+                results["asana"] = _validate_result(True, user=name)
+            else:
+                results["asana"] = _validate_result(False, error=f"HTTP {r.status_code}")
+        except Exception as e:
+            results["asana"] = _validate_result(False, error=str(e))
+    else:
+        results["asana"] = None
+
+    # ── OpenAI ────────────────────────────────────────────────────────────
+    if body.openai_api_key:
+        try:
+            r = requests.get(
+                "https://api.openai.com/v1/models",
+                headers={"Authorization": f"Bearer {body.openai_api_key}"},
+                timeout=10,
+            )
+            if r.ok:
+                results["openai"] = _validate_result(True)
+            else:
+                results["openai"] = _validate_result(False, error=f"HTTP {r.status_code}")
+        except Exception as e:
+            results["openai"] = _validate_result(False, error=str(e))
+    else:
+        results["openai"] = None
+
+    # ── Anthropic ─────────────────────────────────────────────────────────
+    if body.anthropic_api_key:
+        try:
+            r = requests.get(
+                "https://api.anthropic.com/v1/models",
+                headers={
+                    "x-api-key": body.anthropic_api_key,
+                    "anthropic-version": "2023-06-01",
+                },
+                timeout=10,
+            )
+            if r.ok:
+                results["anthropic"] = _validate_result(True)
+            else:
+                results["anthropic"] = _validate_result(False, error=f"HTTP {r.status_code}")
+        except Exception as e:
+            results["anthropic"] = _validate_result(False, error=str(e))
+    else:
+        results["anthropic"] = None
+
+    # ── Snyk ──────────────────────────────────────────────────────────────
+    if body.snyk_token:
+        try:
+            r = requests.get(
+                "https://api.snyk.io/rest/self?version=2024-04-29",
+                headers={"Authorization": f"token {body.snyk_token}"},
+                timeout=10,
+            )
+            if r.ok:
+                data = r.json()
+                name = (data.get("data") or {}).get("attributes", {}).get("name")
+                results["snyk"] = _validate_result(True, user=name)
+            else:
+                results["snyk"] = _validate_result(False, error=f"HTTP {r.status_code}")
+        except Exception as e:
+            results["snyk"] = _validate_result(False, error=str(e))
+    else:
+        results["snyk"] = None
 
     return results
 
@@ -256,14 +413,149 @@ def _access_to_role(level: int) -> str:
     return "observer"
 
 
+# ── GitHub org discovery ──────────────────────────────────────────────────────
+
+@router.get("/discover/github-orgs")
+async def discover_github_orgs(
+    request: Request,
+    token: Optional[str] = Query(default=None, description="GitHub personal access token"),
+):
+    """List GitHub organizations the token owner belongs to."""
+    token = request.headers.get("x-github-token") or token
+    if not token:
+        raise HTTPException(status_code=400, detail="GitHub token is required")
+
+    try:
+        r = requests.get(
+            f"{GITHUB_API}/user/orgs",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/vnd.github+json",
+            },
+            params={"per_page": 100},
+            timeout=15,
+        )
+        if not r.ok:
+            raise HTTPException(
+                status_code=r.status_code,
+                detail=f"GitHub org discovery failed: HTTP {r.status_code}",
+            )
+        orgs = [
+            {"login": o["login"], "description": o.get("description", "") or ""}
+            for o in r.json()
+        ]
+        return {"orgs": orgs}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── GitHub team discovery ─────────────────────────────────────────────────────
+
+@router.get("/discover/github-teams")
+async def discover_github_teams(
+    request: Request,
+    token: Optional[str] = Query(default=None, description="GitHub personal access token"),
+    org: str = Query(..., description="GitHub organization login"),
+):
+    """List teams in a GitHub organization."""
+    token = request.headers.get("x-github-token") or token
+    if not token:
+        raise HTTPException(status_code=400, detail="GitHub token is required")
+
+    try:
+        r = requests.get(
+            f"{GITHUB_API}/orgs/{org}/teams",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/vnd.github+json",
+            },
+            params={"per_page": 100},
+            timeout=15,
+        )
+        if not r.ok:
+            raise HTTPException(
+                status_code=r.status_code,
+                detail=f"GitHub team discovery failed for {org}: HTTP {r.status_code}",
+            )
+        teams = [
+            {
+                "slug": t["slug"],
+                "name": t["name"],
+                "description": t.get("description", "") or "",
+            }
+            for t in r.json()
+        ]
+        return {"teams": teams}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── GitHub team member discovery ──────────────────────────────────────────────
+
+@router.get("/discover/github-members")
+async def discover_github_members(
+    request: Request,
+    token: Optional[str] = Query(default=None, description="GitHub personal access token"),
+    org: str = Query(..., description="GitHub organization login"),
+    team_slug: str = Query(..., description="GitHub team slug"),
+):
+    """List members of a GitHub team. Returns [{username, name, role}]."""
+    token = request.headers.get("x-github-token") or token
+    if not token:
+        raise HTTPException(status_code=400, detail="GitHub token is required")
+
+    try:
+        r = requests.get(
+            f"{GITHUB_API}/orgs/{org}/teams/{team_slug}/members",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/vnd.github+json",
+            },
+            params={"per_page": 100},
+            timeout=15,
+        )
+        if not r.ok:
+            raise HTTPException(
+                status_code=r.status_code,
+                detail=f"GitHub member discovery failed for {org}/{team_slug}: HTTP {r.status_code}",
+            )
+        members = [
+            {
+                "username": m["login"],
+                "name": m["login"],  # GitHub members API doesn't return display name
+                "role": "engineer",
+            }
+            for m in r.json()
+            if m.get("type") == "User"
+        ]
+        return {"members": members}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ── Create domain ──────────────────────────────────────────────────────────────
 
 class DomainCreateRequest(BaseModel):
     organization: dict
     user: dict
     teams: list
-    jira: Optional[dict] = None
+    # Code platform (pick one or none)
     gitlab: Optional[dict] = None
+    github: Optional[dict] = None
+    # Issue tracker (pick one or none)
+    jira: Optional[dict] = None
+    linear: Optional[dict] = None
+    monday: Optional[dict] = None
+    asana: Optional[dict] = None
+    # AI
+    llm: Optional[dict] = None
+    # Other
     optional: Optional[dict] = None
 
 
@@ -282,9 +574,6 @@ async def create_domain(body: DomainCreateRequest):
         raise HTTPException(status_code=422, detail="organization.slug is required")
     if not re.match(r'^[a-zA-Z0-9_-]+$', slug):
         raise HTTPException(status_code=422, detail="slug must contain only alphanumeric characters, hyphens, and underscores")
-    if not body.gitlab or not body.gitlab.get("token"):
-        raise HTTPException(status_code=422, detail="GitLab credentials are required to create a usable domain")
-
     CONFIG_DOMAINS_DIR.mkdir(parents=True, exist_ok=True)
     config_path = CONFIG_DOMAINS_DIR / f"{slug}.yaml"
 
@@ -308,6 +597,12 @@ async def create_domain(body: DomainCreateRequest):
             "provider": "jira",
             "config": {"auth_method": "api_token"},
         }
+    if body.linear and body.linear.get("api_key"):
+        integrations["issue_tracker"] = {"provider": "linear", "config": {}}
+    if body.monday and body.monday.get("token"):
+        integrations["issue_tracker"] = {"provider": "monday", "config": {}}
+    if body.asana and body.asana.get("token"):
+        integrations["issue_tracker"] = {"provider": "asana", "config": {}}
     if body.gitlab:
         gitlab_config: dict = {}
         if body.gitlab.get("base_group"):
@@ -318,11 +613,24 @@ async def create_domain(body: DomainCreateRequest):
             "provider": "gitlab",
             "config": gitlab_config,
         }
+    if body.github and body.github.get("token"):
+        github_config: dict = {}
+        if body.github.get("org"):
+            github_config["org"] = body.github["org"]
+        integrations["code_platform"] = {
+            "provider": "github",
+            "config": github_config,
+        }
     if body.optional and body.optional.get("snyk_token"):
         integrations["security"] = {
             "provider": "snyk",
             "config": {},
         }
+    if body.llm:
+        if body.llm.get("openai_api_key"):
+            integrations["ai"] = {"provider": "openai", "config": {}}
+        elif body.llm.get("anthropic_api_key"):
+            integrations["ai"] = {"provider": "anthropic", "config": {}}
     if integrations:
         config_dict["integrations"] = integrations
     if body.optional and body.optional.get("port_client_id"):
@@ -364,6 +672,25 @@ async def create_domain(body: DomainCreateRequest):
         secret_payload["snyk"] = {
             "token": body.optional.get("snyk_token", ""),
         }
+    if body.github and body.github.get("token"):
+        secret_payload["github"] = {
+            "token": body.github.get("token", ""),
+            "org": body.github.get("org", ""),
+        }
+    if body.linear and body.linear.get("api_key"):
+        secret_payload["linear"] = {"api_key": body.linear["api_key"]}
+    if body.monday and body.monday.get("token"):
+        secret_payload["monday"] = {"token": body.monday["token"]}
+    if body.asana and body.asana.get("token"):
+        secret_payload["asana"] = {"token": body.asana["token"]}
+    if body.llm:
+        llm_secrets: dict = {}
+        if body.llm.get("openai_api_key"):
+            llm_secrets["openai_api_key"] = body.llm["openai_api_key"]
+        if body.llm.get("anthropic_api_key"):
+            llm_secrets["anthropic_api_key"] = body.llm["anthropic_api_key"]
+        if llm_secrets:
+            secret_payload["llm"] = llm_secrets
     if secret_payload:
         save_domain_secrets(slug, secret_payload)
 

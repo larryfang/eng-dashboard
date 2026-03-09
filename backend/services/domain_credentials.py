@@ -128,6 +128,35 @@ def get_snyk_settings(domain_slug: str | None = None) -> dict[str, str]:
     }
 
 
+def get_github_settings(domain_slug: str | None = None) -> dict[str, str]:
+    secrets = load_domain_secrets(domain_slug).get("github", {}) or {}
+    return {
+        "token": secrets.get("token") or os.getenv("GITHUB_TOKEN", ""),
+        "org": secrets.get("org") or os.getenv("GITHUB_ORG", ""),
+    }
+
+
+def get_linear_settings(domain_slug: str | None = None) -> dict[str, str]:
+    secrets = load_domain_secrets(domain_slug).get("linear", {}) or {}
+    return {
+        "api_key": secrets.get("api_key") or os.getenv("LINEAR_API_KEY", ""),
+    }
+
+
+def get_monday_settings(domain_slug: str | None = None) -> dict[str, str]:
+    secrets = load_domain_secrets(domain_slug).get("monday", {}) or {}
+    return {
+        "token": secrets.get("token") or os.getenv("MONDAY_TOKEN", ""),
+    }
+
+
+def get_asana_settings(domain_slug: str | None = None) -> dict[str, str]:
+    secrets = load_domain_secrets(domain_slug).get("asana", {}) or {}
+    return {
+        "token": secrets.get("token") or os.getenv("ASANA_TOKEN", ""),
+    }
+
+
 def get_llm_settings(domain_slug: str | None = None) -> dict[str, str]:
     """Get LLM API keys — domain secrets take priority over env vars."""
     secrets = load_domain_secrets(domain_slug).get("llm", {}) or {}
