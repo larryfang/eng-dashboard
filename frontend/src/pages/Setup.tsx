@@ -315,6 +315,7 @@ function TeamEditor({
   team,
   index,
   projectOptions,
+  codePlatform,
   onChange,
   onRemove,
   onDiscoverMembers,
@@ -324,6 +325,7 @@ function TeamEditor({
   team: TeamForm
   index: number
   projectOptions: JiraProject[]
+  codePlatform: CodePlatform
   onChange: (next: TeamForm) => void
   onRemove: () => void
   onDiscoverMembers: () => void
@@ -393,11 +395,13 @@ function TeamEditor({
           />
         </label>
         <label className="space-y-2 text-sm text-slate-300">
-          <span className="text-xs uppercase tracking-[0.18em] text-slate-500">GitLab path</span>
+          <span className="text-xs uppercase tracking-[0.18em] text-slate-500">
+            {codePlatform === 'github' ? 'GitHub repo path' : 'GitLab path'}
+          </span>
           <input
             className="setup-input font-mono text-xs"
             value={team.gitlabPath}
-            placeholder="acme/teams/platform"
+            placeholder={codePlatform === 'github' ? 'org/repo-name' : 'acme/teams/platform'}
             onChange={event => setTeam({ gitlabPath: event.target.value })}
           />
         </label>
@@ -1092,9 +1096,10 @@ export default function Setup({ onComplete, isNewDomain = false }: SetupProps) {
           lead: team.lead.trim(),
           lead_email: team.leadEmail.trim(),
           headcount: team.members.length,
+          git_provider: codePlatform === 'github' ? 'github' : 'gitlab',
           jira_project: team.jiraKey.trim() || undefined,
           gitlab_path: team.gitlabPath.trim(),
-          gitlab_members: team.members.map(member => ({
+          members: team.members.map(member => ({
             username: member.username.trim(),
             name: member.name.trim(),
             role: member.role,
@@ -1879,6 +1884,7 @@ export default function Setup({ onComplete, isNewDomain = false }: SetupProps) {
                           team={team}
                           index={index}
                           projectOptions={discoveredProjects}
+                          codePlatform={codePlatform}
                           onChange={nextTeam => updateTeam(index, nextTeam)}
                           onRemove={() => setTeams(current => current.filter((_, teamIndex) => teamIndex !== index))}
                           onDiscoverMembers={() => {

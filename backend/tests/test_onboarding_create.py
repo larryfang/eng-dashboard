@@ -169,6 +169,58 @@ async def test_create_domain_seeds_ref_tables():
 
 
 @pytest.mark.asyncio
+async def test_create_domain_stores_git_provider_on_teams():
+    """When teams specify git_provider=github, it must be stored in ref_teams."""
+    payload = _minimal_payload()
+    payload["teams"][0]["git_provider"] = "github"
+    body = DomainCreateRequest(**payload)
+    await create_domain(body)
+
+    from backend.database_domain import get_domain_engine
+    from backend.models_domain import RefTeam
+    from sqlalchemy.orm import Session
+
+    engine = get_domain_engine("test-wizard")
+    with Session(bind=engine) as db:
+        team = db.query(RefTeam).filter_by(slug="alpha").first()
+
+    assert team is not None
+    assert team.git_provider == "github", (
+        f"Expected git_provider='github', got '{team.git_provider}'. "
+        "This means GitHub teams will use the wrong API for syncing."
+    )
+
+
+@pytest.mark.asyncio
+async def test_create_domain_uses_members_field_not_gitlab_members():
+    """The 'members' field in the payload must seed ref_members correctly."""
+    payload = _minimal_payload()
+    payload["teams"] = [{
+        "key": "BETA",
+        "name": "Beta Team",
+        "slug": "beta",
+        "git_provider": "github",
+        "members": [
+            {"username": "carol", "name": "Carol Chen", "role": "TL"},
+        ],
+    }]
+    body = DomainCreateRequest(**payload)
+    result = await create_domain(body)
+    assert result["ok"] is True
+
+    from backend.database_domain import get_domain_engine
+    from backend.models_domain import RefMember
+    from sqlalchemy.orm import Session
+
+    engine = get_domain_engine("test-wizard")
+    with Session(bind=engine) as db:
+        members = db.query(RefMember).filter_by(team_slug="beta").all()
+
+    assert len(members) == 1, f"Expected 1 member, got {len(members)}"
+    assert members[0].gitlab_username == "carol"
+
+
+@pytest.mark.asyncio
 async def test_create_domain_switches_active_domain():
     """After create, the new domain must be the active domain."""
     payload = _minimal_payload()

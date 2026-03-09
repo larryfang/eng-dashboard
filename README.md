@@ -132,9 +132,16 @@ teams:
 
 See `config/organization.example.yaml` for the full annotated template.
 
-### .env
+### .env (or setup wizard)
 
-All credentials and secrets go here. Never commit this file.
+There are two ways to provide credentials:
+
+1. **Setup wizard** (recommended) -- the wizard saves secrets to `data/domains/{slug}.secrets.json` automatically
+2. **`.env` file** -- for manual setup or overriding wizard values
+
+Credential priority: wizard secrets > organization.yaml config > `.env` environment variables.
+
+If you use the setup wizard, you do not need a `.env` file at all. The `.env` file is useful for CI, Docker, or when you want to manage credentials outside the wizard.
 
 ```bash
 # Code platform (pick one or both)
