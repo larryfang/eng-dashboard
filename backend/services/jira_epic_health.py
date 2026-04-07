@@ -16,7 +16,6 @@ from sqlalchemy.orm import Session
 
 from backend.models_domain import JiraEpic
 from backend.services.datetime_utils import ensure_utc, utcnow_naive
-from backend.services.notification_service import get_notifier
 
 if TYPE_CHECKING:
     from backend.issue_tracker.base import IssueTrackerPlugin
@@ -105,37 +104,6 @@ def check_stalled_epics(
 def run_epic_health_alert(
     db: Session,
     issue_tracker: Optional["IssueTrackerPlugin"] = None,
-) -> None:
-    """Group stalled epics by team, send single Telegram alert."""
-    stalled = check_stalled_epics(db, issue_tracker=issue_tracker)
-    if not stalled:
-        return
-
-    stale_days = os.getenv("ALERT_JIRA_STALE_DAYS", "7")
-    lines = [
-        f"<b>Stalled Epics ({len(stalled)} with no updates in {stale_days}+ days)</b>\n"
-    ]
-
-    # Group by team
-    by_team: dict[str, list] = {}
-    for s in stalled:
-        by_team.setdefault(s["team_name"], []).append(s)
-
-    for team, epics in sorted(by_team.items()):
-        lines.append(f"<b>{team}</b>:")
-        for e in sorted(epics, key=lambda x: x["days_stalled"], reverse=True):
-            name = e["epic_name"]
-            if len(name) > 50:
-                name = name[:50] + "..."
-            url = e.get("url") or ""
-            if url:
-                lines.append(
-                    f'  - <a href="{url}">{e["epic_key"]}</a> '
-                    f"{name} ({e['days_stalled']}d)"
-                )
-            else:
-                lines.append(
-                    f"  - {e['epic_key']} {name} ({e['days_stalled']}d)"
-                )
-
-    get_notifier().send_alert("stalled_epics", "\n".join(lines))
+) -> list[dict]:
+    """Check for stalled epics and return flagged list."""
+    return check_stalled_epics(db, issue_tracker=issue_tracker)

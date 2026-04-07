@@ -48,7 +48,6 @@ async def get_capabilities():
         "has_dora": any(p.name == "gitlab" and p.configured for p in code_platforms),
         "has_services": _has_port_configured(),
         "has_security": _has_snyk_configured(),
-        "has_notifications": _has_telegram_configured(),
     }
 
     return Capabilities(
@@ -161,7 +160,3 @@ def _has_snyk_configured() -> bool:
     return bool(os.getenv("SNYK_TOKEN"))
 
 
-def _has_telegram_configured() -> bool:
-    import os
-
-    return bool(os.getenv("TELEGRAM_BOT_TOKEN") and os.getenv("TELEGRAM_CHAT_ID"))

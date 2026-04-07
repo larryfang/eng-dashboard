@@ -13,7 +13,6 @@ from sqlalchemy.orm import Session
 
 from backend.models_domain import MRActivity, RefMember
 from backend.services.datetime_utils import ensure_utc
-from backend.services.notification_service import get_notifier
 
 logger = logging.getLogger(__name__)
 
@@ -73,23 +72,6 @@ def check_quiet_engineers(db: Session) -> list[dict]:
     return quiet
 
 
-def run_quiet_engineer_alert(db: Session) -> None:
-    """Batch all quiet engineers into one Telegram message."""
-    quiet = check_quiet_engineers(db)
-    if not quiet:
-        return
-
-    quiet_days = os.getenv("QUIET_ENGINEER_DAYS", "10")
-    lines = [f"<b>Quiet Engineers ({len(quiet)} with no MRs in {quiet_days}+ days)</b>\n"]
-
-    # Group by team
-    by_team: dict[str, list] = {}
-    for q in quiet:
-        by_team.setdefault(q["team_name"], []).append(q)
-
-    for team, engineers in sorted(by_team.items()):
-        lines.append(f"<b>{team}</b>:")
-        for e in sorted(engineers, key=lambda x: x["days_since_last_activity"], reverse=True):
-            lines.append(f"  - {e['engineer_name']} ({e['days_since_last_activity']}d)")
-
-    get_notifier().send_alert("quiet_engineers", "\n".join(lines))
+def run_quiet_engineer_alert(db: Session) -> list[dict]:
+    """Check for quiet engineers and return flagged list."""
+    return check_quiet_engineers(db)

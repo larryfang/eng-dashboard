@@ -128,34 +128,3 @@ The backend runs from the project root (`uvicorn backend.main:app`), so `backend
 | Use bare imports like `from models_domain import ...` | Always use `backend.` prefix — `from backend.models_domain import ...` |
 | Show only engineers with MR activity in list view | Always include all `ref_members` (0-MR members included) |
 
-## Notification System
-
-Alerts are pushed directly to Telegram via the Bot API.
-
-### Architecture
-
-- **`backend/services/notification_service.py`** — `TelegramNotifier` singleton that sends HTML-formatted messages via httpx to the Telegram Bot API. Includes per-alert-type cooldown (in-memory dict, keyed by `alert_type`, minimum gap of `ALERT_COOLDOWN_MINUTES`).
-- **`backend/services/team_trend_alerts.py`** — Compares current vs prior 7-day MR counts per team from `mr_activity`. Flags teams with drop >= `ALERT_DORA_DEGRADATION_PCT`%.
-- **`backend/services/quiet_engineer_alerts.py`** — Checks `ref_members` (active, non-departed, non-excluded) against `mr_activity` for recent work. Flags engineers with no MRs in `QUIET_ENGINEER_DAYS`.
-- **`backend/services/jira_epic_health.py`** — Queries `jira_epics` for items not updated within `ALERT_JIRA_STALE_DAYS` whose status is not Done/Closed/Cancelled/Resolved.
-
-### Alert Schedule (wired in `scheduler.py`)
-
-| Alert | Trigger | Frequency |
-|-------|---------|-----------|
-| Team MR trends | After successful engineer sync | Per sync cycle (~1h) with 4h cooldown |
-| Quiet engineers | Daily | Once per calendar day |
-| Stalled epics | Weekly Monday | Once per Monday |
-
-All alerts run via `asyncio.to_thread()` and are wrapped in try/except — they never crash the scheduler.
-
-### Environment Variables
-
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `TELEGRAM_BOT_TOKEN` | — | Telegram Bot API token (from @BotFather) |
-| `TELEGRAM_CHAT_ID` | — | Target chat/group ID |
-| `ALERT_COOLDOWN_MINUTES` | 240 | Minimum gap between same alert type |
-| `ALERT_DORA_DEGRADATION_PCT` | 20 | MR drop % threshold for trend alerts |
-| `QUIET_ENGINEER_DAYS` | 10 | Days of inactivity before flagging |
-| `ALERT_JIRA_STALE_DAYS` | 7 | Days since last epic update before flagging |

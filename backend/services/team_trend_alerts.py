@@ -12,7 +12,6 @@ from sqlalchemy import func as sqlfunc
 from sqlalchemy.orm import Session
 
 from backend.models_domain import MRActivity, RefTeam
-from backend.services.notification_service import get_notifier
 
 logger = logging.getLogger(__name__)
 
@@ -69,19 +68,6 @@ def check_team_trends(db: Session) -> list[dict]:
     return flagged
 
 
-def run_trend_alert(db: Session) -> None:
-    """Check team trends and send Telegram alert if any teams are flagged."""
-    flagged = check_team_trends(db)
-    if not flagged:
-        return
-
-    threshold = os.getenv("ALERT_DORA_DEGRADATION_PCT", "20")
-    lines = ["<b>Team MR Trend Alert</b>\n"]
-    for t in sorted(flagged, key=lambda x: x["drop_pct"], reverse=True):
-        lines.append(
-            f"  {t['team_name']}: {t['prior_mrs']} -> {t['current_mrs']} "
-            f"({t['drop_pct']}% drop)"
-        )
-    lines.append(f"\nThreshold: {threshold}% week-over-week drop")
-
-    get_notifier().send_alert("team_trends", "\n".join(lines))
+def run_trend_alert(db: Session) -> list[dict]:
+    """Check team trends and return flagged teams."""
+    return check_team_trends(db)

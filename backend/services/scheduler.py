@@ -12,7 +12,7 @@ Sync order (dependency-aware):
 """
 import asyncio
 import logging
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -23,10 +23,6 @@ _task: Optional[asyncio.Task] = None
 _paused = False
 _active_syncs: set[str] = set()
 _retry_counts: dict[str, int] = {}
-
-# Alert scheduling state
-_last_quiet_check: Optional[date] = None
-_last_epic_check: Optional[date] = None
 
 MAX_RETRIES = 3
 RETRY_BACKOFF_MINUTES = [5, 15, 45]
@@ -110,38 +106,6 @@ async def _run_section(section: str, fn, *args) -> bool:
         _active_syncs.discard(section)
 
 
-# ── Alert helpers (run in thread via asyncio.to_thread) ──────────────────────
-
-def _fire_trend_alert():
-    from backend.database_domain import create_ecosystem_session
-    from backend.services.team_trend_alerts import run_trend_alert
-    db = create_ecosystem_session()
-    try:
-        run_trend_alert(db)
-    finally:
-        db.close()
-
-
-def _fire_quiet_engineer_alert():
-    from backend.database_domain import create_ecosystem_session
-    from backend.services.quiet_engineer_alerts import run_quiet_engineer_alert
-    db = create_ecosystem_session()
-    try:
-        run_quiet_engineer_alert(db)
-    finally:
-        db.close()
-
-
-def _fire_epic_health_alert():
-    from backend.database_domain import create_ecosystem_session
-    from backend.services.jira_epic_health import run_epic_health_alert
-    db = create_ecosystem_session()
-    try:
-        run_epic_health_alert(db)
-    finally:
-        db.close()
-
-
 def _run_due_executive_digests():
     from backend.database_domain import create_ecosystem_session
     from backend.services.executive_reporting_service import run_due_digests
@@ -157,23 +121,13 @@ def _run_due_executive_digests():
 
 async def _run_sync_cycle(days: int = 30):
     """Execute one full sync cycle in dependency order."""
-    global _last_quiet_check, _last_epic_check
-
     from backend.services.sync_tasks import (
         sync_engineers, sync_team_metrics, sync_dora, sync_jira_epics,
     )
 
     # Phase 1: engineers (everything depends on MR data)
-    engineer_synced = False
     if _is_section_due("engineers", days):
-        engineer_synced = await _run_section("engineers", sync_engineers, days, False, "scheduler")
-
-    # Fire trend alert after successful GitLab sync
-    if engineer_synced:
-        try:
-            await asyncio.to_thread(_fire_trend_alert)
-        except Exception as e:
-            logger.warning("Post-sync trend alert failed: %s", e)
+        await _run_section("engineers", sync_engineers, days, False, "scheduler")
 
     if _paused:
         return
@@ -190,26 +144,6 @@ async def _run_sync_cycle(days: int = 30):
     # Phase 3: jira_epics
     if _is_section_due("jira_epics", 0):
         await _run_section("jira_epics", sync_jira_epics, "scheduler")
-
-    # ── Proactive alerts ─────────────────────────────────────────────────────
-
-    today = datetime.now(timezone.utc).date()
-
-    # Daily: quiet engineer check
-    if _last_quiet_check != today:
-        try:
-            await asyncio.to_thread(_fire_quiet_engineer_alert)
-            _last_quiet_check = today
-        except Exception as e:
-            logger.warning("Quiet engineer alert failed: %s", e)
-
-    # Weekly Monday: epic health check
-    if datetime.now(timezone.utc).weekday() == 0 and _last_epic_check != today:
-        try:
-            await asyncio.to_thread(_fire_epic_health_alert)
-            _last_epic_check = today
-        except Exception as e:
-            logger.warning("Epic health alert failed: %s", e)
 
     try:
         await asyncio.to_thread(_run_due_executive_digests)
