@@ -14,14 +14,14 @@ React + FastAPI dashboard for tracking GitLab activity, Jira tickets, DORA metri
 
 | DB | Path | Purpose |
 |----|------|---------|
-| `eng_dashboard.db` | `data/eng_dashboard.db` | Legacy personal data |
-| `ecosystem.db` | `data/domains/ecosystem.db` | Dashboard data (domain-isolated) |
+| `eng_dashboard.db` | `eng_dashboard.db` (repo root; `DATABASE_URL` overrides) | Legacy personal data |
+| `{slug}.db` | `data/domains/{slug}.db` | Dashboard data (domain-isolated) |
 
-All dashboard endpoints read from `ecosystem.db`. The `data/domains/` directory is gitignored except for `.gitkeep`.
+All dashboard endpoints read from the ACTIVE domain's DB. Where `ecosystem.db` appears below, read it as the active domain DB. The `data/domains/` directory is gitignored except for `.gitkeep`.
 
 ### Domain Isolation
 
-Each director gets their own isolated DB at `data/domains/{slug}.db`. The slug comes from `organization.yaml → organization.slug`.
+Each domain gets its own isolated DB at `data/domains/{slug}.db`. The slug is the file stem of a `config/domains/*.yaml` file; the active one comes from `data/active_domain.txt`, else the first domain file (`backend/services/domain_registry.py` → `get_active_slug`).
 
 ### Reference Data (Authoritative)
 
@@ -99,13 +99,13 @@ The backend runs from the project root (`uvicorn backend.main:app`), so `backend
 | File | Purpose |
 |------|---------|
 | `backend/database_domain.py` | Domain engine factory — `get_ecosystem_session()`, `init_domain_db()` |
-| `backend/models_domain.py` | ORM models for all 7 domain DB tables |
+| `backend/models_domain.py` | ORM models for the domain DB tables |
 | `backend/services/domain_seeder.py` | Seeds `ref_teams` + `ref_members` from YAML on startup |
 | `backend/routers/gitlab_collector_router.py` | GitLab sync, DORA metrics, engineer endpoints |
 | `backend/routers/sync_router.py` | Sync status GET/POST endpoints |
 | `config/organization.yaml` | Team + engineer roster (source of truth) |
 
-## Domain DB Tables
+## Domain DB Tables (high level)
 
 | Table | Type | Purpose |
 |-------|------|---------|
@@ -116,6 +116,8 @@ The backend runs from the project root (`uvicorn backend.main:app`), so `backend
 | `jira_epics` | Transactional | Jira epic cache |
 | `sync_status` | Control | Per-section sync state and TTL |
 | `section_cache` | Control | Cached responses per section+period |
+
+See `backend/models_domain.py` for the full list.
 
 ## Common Mistakes
 
