@@ -127,3 +127,12 @@ test('formatReportTimestamp falls back when there is no value', () => {
   assert.equal(formatReportTimestamp(null), '—')
   assert.notEqual(formatReportTimestamp('2026-03-06T12:00:00Z'), '—')
 })
+
+
+test('the print window is opened without noopener, so the handle is usable', async () => {
+  // window.open(..., 'noopener') returns null by the HTML standard; printHtmlDocument
+  // then returned at once and "Export PDF" did nothing.
+  const { PRINT_WINDOW_FEATURES } = await import('../src/features/reports/reportingHelpers.js')
+  assert.ok(!/noopener|noreferrer/.test(PRINT_WINDOW_FEATURES))
+  assert.match(PRINT_WINDOW_FEATURES, /width=\d+/)
+})

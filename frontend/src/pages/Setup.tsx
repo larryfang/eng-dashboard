@@ -21,6 +21,7 @@ import {
   Trash2,
   Users,
 } from 'lucide-react'
+import { parseApiDate } from '../features/apiDate.js'
 
 interface SetupProps {
   onComplete: () => void
@@ -182,7 +183,7 @@ function normaliseRole(raw: string | undefined): MemberRole {
 
 function formatTimestamp(value?: string | null) {
   if (!value) return 'Not yet'
-  const date = new Date(value)
+  const date = parseApiDate(value)
   if (Number.isNaN(date.getTime())) return 'Not yet'
   return date.toLocaleString()
 }

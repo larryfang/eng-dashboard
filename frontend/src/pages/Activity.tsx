@@ -5,6 +5,7 @@ import { ExternalLink, GitMerge, RefreshCw } from 'lucide-react'
 import { getMergeRequestActivity, type MergeRequestActivityItem, type MergeRequestActivityResponse } from '../api/client'
 import LoadingSpinner from '../components/LoadingSpinner'
 import { downloadCsv } from '../utils/export'
+import { parseApiDate } from '../features/apiDate.js'
 
 function buildRows(items: MergeRequestActivityItem[]) {
   return items.map(item => ({
@@ -24,7 +25,7 @@ function buildRows(items: MergeRequestActivityItem[]) {
 
 function formatTimestamp(value?: string | null) {
   if (!value) return '—'
-  return new Date(value).toLocaleString('en-AU', {
+  return parseApiDate(value).toLocaleString('en-AU', {
     day: 'numeric',
     month: 'short',
     hour: '2-digit',
@@ -103,7 +104,7 @@ function ActivityTable({ title, items }: { title: string; items: MergeRequestAct
                 <td className="px-4 py-3 text-slate-300">
                   <div>
                     <p>{formatTimestamp(item.created_at)}</p>
-                    {item.created_at && <p className="text-xs text-slate-500">{formatDistanceToNow(new Date(item.created_at), { addSuffix: true })}</p>}
+                    {item.created_at && <p className="text-xs text-slate-500">{formatDistanceToNow(parseApiDate(item.created_at), { addSuffix: true })}</p>}
                   </div>
                 </td>
                 <td className="px-4 py-3 text-slate-300">{formatTimestamp(item.merged_at)}</td>

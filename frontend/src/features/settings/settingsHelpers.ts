@@ -5,6 +5,7 @@ import type {
   SchedulerState,
   SyncHistoryRun,
 } from '../../api/client.js'
+import { parseApiDate } from '../apiDate.js'
 
 export type ProviderCard = {
   label: string
@@ -18,7 +19,7 @@ type SchedulerSection = SchedulerState['sections'][string]
 export function formatSettingsTimestamp(value?: string | null, fallback = 'Not yet synced'): string {
   if (!value) return fallback
 
-  return new Date(value).toLocaleString('en-AU', {
+  return parseApiDate(value).toLocaleString('en-AU', {
     day: 'numeric',
     month: 'short',
     hour: '2-digit',

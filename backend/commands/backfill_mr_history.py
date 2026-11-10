@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 def main():
     parser = argparse.ArgumentParser(description="Backfill MR history from GitLab")
     parser.add_argument("--days", type=int, default=365, help="Days to look back (default: 365)")
-    parser.add_argument("--force", action="store_true", help="Delete existing rows first (clean re-fetch)")
+    parser.add_argument("--force", action="store_true", help="Delete the rows inside the --days window first (clean re-fetch of that window)")
     args = parser.parse_args()
 
     from backend.database_domain import init_domain_db

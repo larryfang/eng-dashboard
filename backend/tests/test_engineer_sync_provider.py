@@ -220,3 +220,119 @@ class TestProviderAwareSync:
         assert rows[0].state == "merged"
         assert rows[0].author_team == "alpha"  # Updated from "old-team"
         assert rows[0].merged_at is not None
+
+
+def _seed_one_team(db):
+    db.add(RefTeam(slug="alpha", key="ALPHA", name="Alpha", git_provider="gitlab"))
+    for name in ("alice", "bob"):
+        db.add(RefMember(gitlab_username=name, name=name.title(), team_slug="alpha",
+                         team_display="Alpha", role="engineer"))
+    db.commit()
+
+
+def _patch_config(monkeypatch, provider):
+    monkeypatch.setattr("backend.services.engineer_sync_service.create_provider", lambda name: provider)
+    monkeypatch.setattr("backend.services.engineer_sync_service.get_domain_config",
+                        lambda slug: MagicMock(jira_project_keys=[]))
+    monkeypatch.setattr("backend.services.engineer_sync_service.get_active_slug", lambda: "test")
+
+
+class TestSyncFailureAndForceFull:
+    def test_a_run_where_every_fetch_fails_is_an_error_not_a_success(self, monkeypatch):
+        """Regression (2026-11-10): an expired token made every fetch fail; the run
+        returned 0 and was recorded as `success records=0`."""
+        from backend.services.engineer_sync_service import sync_engineers
+
+        db = _make_db()
+        _seed_one_team(db)
+        provider = MagicMock(spec=GitProvider)
+        provider.fetch_pull_requests.side_effect = RuntimeError("401 Unauthorized")
+        _patch_config(monkeypatch, provider)
+
+        with pytest.raises(RuntimeError, match="every engineer"):
+            sync_engineers(db, days=30)
+
+    def test_force_full_keeps_history_older_than_the_window(self, monkeypatch):
+        """force_full deleted ALL rows of the members, then fetched only `days`:
+        a full refresh with a 30-day window removed the 60/90/365-day history."""
+        from datetime import timedelta
+
+        from backend.services.engineer_sync_service import sync_engineers
+
+        db = _make_db()
+        _seed_one_team(db)
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        db.add(MRActivity(repo_id="r", mr_iid=1, author_username="alice", title="old",
+                          state="merged", created_at=now - timedelta(days=200)))
+        db.add(MRActivity(repo_id="r", mr_iid=2, author_username="alice", title="recent",
+                          state="merged", created_at=now - timedelta(days=3)))
+        db.commit()
+        provider = MagicMock(spec=GitProvider)
+        provider.fetch_pull_requests.return_value = []
+        _patch_config(monkeypatch, provider)
+
+        sync_engineers(db, days=30, force_full=True)
+
+        titles = {m.title for m in db.query(MRActivity).all()}
+        assert titles == {"old"}  # in-window rows are rebuilt from the provider; older rows stay
+
+    def test_force_full_with_a_failed_fetch_does_not_delete_that_engineers_rows(self, monkeypatch):
+        """The delete ran before the fetch: a failed fetch left the window empty."""
+        from datetime import timedelta
+
+        from backend.services.engineer_sync_service import sync_engineers
+
+        db = _make_db()
+        _seed_one_team(db)
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        for iid, who in ((1, "alice"), (2, "bob")):
+            db.add(MRActivity(repo_id="r", mr_iid=iid, author_username=who, title=f"{who} recent",
+                              state="merged", created_at=now - timedelta(days=3)))
+        db.commit()
+        provider = MagicMock(spec=GitProvider)
+
+        def fetch(username, since_iso):
+            if username == "bob":
+                raise RuntimeError("timeout")
+            return []
+
+        provider.fetch_pull_requests.side_effect = fetch
+        _patch_config(monkeypatch, provider)
+
+        sync_engineers(db, days=30, force_full=True)  # a partial failure does not raise
+
+        assert {m.title for m in db.query(MRActivity).all()} == {"bob recent"}
+
+    def test_force_full_when_every_fetch_fails_keeps_all_rows(self, monkeypatch):
+        from datetime import timedelta
+
+        from backend.services.engineer_sync_service import sync_engineers
+
+        db = _make_db()
+        _seed_one_team(db)
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        db.add(MRActivity(repo_id="r", mr_iid=1, author_username="alice", title="recent",
+                          state="merged", created_at=now - timedelta(days=3)))
+        db.commit()
+        provider = MagicMock(spec=GitProvider)
+        provider.fetch_pull_requests.side_effect = RuntimeError("401 Unauthorized")
+        _patch_config(monkeypatch, provider)
+
+        with pytest.raises(RuntimeError, match="every engineer"):
+            sync_engineers(db, days=30, force_full=True)
+        assert db.query(MRActivity).count() == 1
+
+    def test_a_provider_with_no_credentials_is_skipped_without_an_error(self, monkeypatch):
+        from backend.services.engineer_sync_service import sync_engineers
+
+        db = _make_db()
+        _seed_one_team(db)
+
+        def no_credentials(name):
+            raise RuntimeError("GITLAB_TOKEN not configured")
+
+        monkeypatch.setattr("backend.services.engineer_sync_service.create_provider", no_credentials)
+        monkeypatch.setattr("backend.services.engineer_sync_service.get_domain_config",
+                            lambda slug: MagicMock(jira_project_keys=[]))
+        monkeypatch.setattr("backend.services.engineer_sync_service.get_active_slug", lambda: "test")
+        assert sync_engineers(db, days=30) == 0

@@ -1,4 +1,5 @@
 import { formatDistanceToNow } from 'date-fns'
+import { parseApiDate } from '../features/apiDate.js'
 
 interface SyncInfo {
   last_synced_at: string | null
@@ -21,11 +22,11 @@ export default function SyncStatusBadge({ syncInfo, onRefresh, loading, schedule
   const isSyncing = loading || syncInfo.status === 'syncing'
 
   const label = syncInfo.last_synced_at
-    ? `Synced ${formatDistanceToNow(new Date(syncInfo.last_synced_at), { addSuffix: true })}`
+    ? `Synced ${formatDistanceToNow(parseApiDate(syncInfo.last_synced_at), { addSuffix: true })}`
     : 'Never synced'
 
   const nextLabel = syncInfo.next_sync_at
-    ? `Next in ${formatDistanceToNow(new Date(syncInfo.next_sync_at))}`
+    ? `Next in ${formatDistanceToNow(parseApiDate(syncInfo.next_sync_at))}`
     : null
 
   return (

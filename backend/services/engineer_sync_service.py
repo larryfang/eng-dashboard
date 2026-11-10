@@ -18,6 +18,7 @@ import re
 import requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
+from sqlalchemy import func as sqlfunc
 from sqlalchemy.orm import Session
 
 from backend.services.datetime_utils import parse_dt
@@ -65,8 +66,9 @@ def sync_engineers(db: Session, days: int, force_full: bool = False) -> int:
     Args:
         db: SQLAlchemy session for ecosystem.db
         days: How many days back to fetch
-        force_full: If True, delete existing rows for all members first,
-                    then re-insert. Use to fix stale/incorrect data.
+        force_full: If True, delete the rows inside the `days` window for each
+                    engineer whose fetch succeeded, then re-insert. Rows older
+                    than the window stay. Use to fix stale/incorrect data.
 
     Returns:
         Number of rows written (inserted + updated)
@@ -83,17 +85,6 @@ def sync_engineers(db: Session, days: int, force_full: bool = False) -> int:
     members = db.query(RefMember).filter(RefMember.departed == False).all()
     logger.info(f"Syncing {len(members)} engineers for last {days} days (force_full={force_full})")
 
-    if force_full:
-        # Clean slate: remove all existing MR rows for these members
-        usernames = [m.gitlab_username for m in members]
-        deleted = (
-            db.query(MRActivity)
-            .filter(MRActivity.author_username.in_(usernames))
-            .delete(synchronize_session=False)
-        )
-        db.commit()
-        logger.info(f"force_full: deleted {deleted} existing mr_activity rows")
-
     # Group members by their team's git_provider
     team_providers: dict[str, str] = {}
     for team in db.query(RefTeam).all():
@@ -105,6 +96,9 @@ def sync_engineers(db: Session, days: int, force_full: bool = False) -> int:
         members_by_provider.setdefault(prov, []).append(m)
 
     total_written = 0
+    fetch_attempts = 0
+    fetch_failures = 0
+    last_fetch_error: Exception | None = None
     for provider_name, provider_members in members_by_provider.items():
         try:
             provider = create_provider(provider_name)
@@ -122,13 +116,30 @@ def sync_engineers(db: Session, days: int, force_full: bool = False) -> int:
             futures = {pool.submit(_fetch_for_member, m): m for m in provider_members}
             for future in as_completed(futures):
                 m = futures[future]
+                fetch_attempts += 1
                 try:
                     username, prs = future.result()
                     member_prs[username] = prs
                 except Exception as e:
+                    fetch_failures += 1
+                    last_fetch_error = e
                     logger.warning(f"  {m.gitlab_username}: fetch failed — {e}")
 
         provider.close()
+
+        if force_full and member_prs:
+            # Clean slate, only for the window that was fetched again and only for
+            # the engineers whose fetch succeeded. The delete comes after the fetch:
+            # a failed fetch must not leave the window empty, and rows older than
+            # `since` are not fetched, so they stay.
+            deleted = (
+                db.query(MRActivity)
+                .filter(sqlfunc.lower(MRActivity.author_username).in_([u.lower() for u in member_prs]))
+                .filter(MRActivity.created_at >= since.replace(tzinfo=None))
+                .delete(synchronize_session=False)
+            )
+            db.commit()
+            logger.info(f"force_full: deleted {deleted} mr_activity rows inside the {days}-day window")
 
         # Upsert sequentially — SQLite is a single writer
         for member in provider_members:
@@ -143,6 +154,13 @@ def sync_engineers(db: Session, days: int, force_full: bool = False) -> int:
                     db.rollback()
                 except Exception:
                     pass
+
+    # Every fetch failed (an expired token, the API down): that is a failed sync,
+    # not "0 MRs". The caller records the error and the scheduler retries.
+    if fetch_attempts and fetch_failures == fetch_attempts:
+        raise RuntimeError(
+            f"the fetch failed for every engineer ({fetch_failures} of {fetch_attempts}): {last_fetch_error}"
+        )
 
     return total_written
 

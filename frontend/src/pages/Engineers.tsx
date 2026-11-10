@@ -23,6 +23,7 @@ import PeriodSelector, { type PeriodDays } from '../components/PeriodSelector'
 import SyncStatusBadge from '../components/SyncStatusBadge'
 import { formatDistanceToNow } from 'date-fns'
 import { downloadCsv } from '../utils/export'
+import { parseApiDate } from '../features/apiDate.js'
 
 type SortKey = 'name' | 'team' | 'mrs_opened' | 'mrs_merged'
 
@@ -238,7 +239,7 @@ export default function Engineers() {
                   </td>
                   <td className="px-4 py-3 text-right text-gray-400 text-xs">
                     {(eng.last_activity || eng.last_active)
-                      ? formatDistanceToNow(new Date((eng.last_activity || eng.last_active)!), { addSuffix: true })
+                      ? formatDistanceToNow(parseApiDate((eng.last_activity || eng.last_active)!), { addSuffix: true })
                       : 'Never'}
                   </td>
                 </tr>

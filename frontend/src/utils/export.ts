@@ -1,3 +1,5 @@
+import { PRINT_WINDOW_FEATURES } from '../features/reports/reportingHelpers.js'
+
 function escapeCsvCell(value: unknown): string {
   const text = value == null ? '' : String(value)
   if (/[",\n]/.test(text)) {
@@ -45,8 +47,9 @@ export function downloadText(filename: string, content: string, mimeType = 'text
 }
 
 export function printHtmlDocument(title: string, html: string) {
-  const popup = window.open('', '_blank', 'noopener,noreferrer,width=1200,height=900')
+  const popup = window.open('', '_blank', PRINT_WINDOW_FEATURES)
   if (!popup) return
+  popup.opener = null // the popup holds our own HTML; it does not need a handle to this page
 
   popup.document.open()
   popup.document.write(`

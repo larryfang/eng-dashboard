@@ -1,4 +1,5 @@
 import type { ExecutiveDigest, ExecutiveDigestRun } from '../../api/client.js'
+import { parseApiDate } from '../apiDate.js'
 
 export type DigestDraft = {
   name: string
@@ -41,7 +42,7 @@ export function createDefaultDigestDraft(): DigestDraft {
 export function formatReportTimestamp(value?: string | null, fallback = '—'): string {
   if (!value) return fallback
 
-  return new Date(value).toLocaleString('en-AU', {
+  return parseApiDate(value).toLocaleString('en-AU', {
     day: 'numeric',
     month: 'short',
     hour: '2-digit',
@@ -119,3 +120,7 @@ export function getDigestRunMeta(
 ): string {
   return `${formatReportTimestamp(run.generated_at)} · ${run.delivery_state} · ${run.recipient_count} recipients`
 }
+
+// Features of the window that printHtmlDocument opens. No `noopener` / `noreferrer`:
+// with them window.open returns null (HTML standard), and the print could not start.
+export const PRINT_WINDOW_FEATURES = 'width=1200,height=900'

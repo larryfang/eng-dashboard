@@ -4,6 +4,7 @@ import { getPortServices, syncPortServices, enrichPortVersions, getConfig } from
 import type { OrgConfig, TeamConfig } from '../api/client'
 import LoadingSpinner from '../components/LoadingSpinner'
 import { formatDistanceToNow } from 'date-fns'
+import { parseApiDate } from '../features/apiDate.js'
 
 interface PortService {
   id: string
@@ -292,7 +293,7 @@ export default function ServicesPage() {
             {versionedCount} versioned
             {data?.synced_at && (
               <span className="ml-2 text-gray-600">
-                · cached {formatDistanceToNow(new Date(data.synced_at), { addSuffix: true })}
+                · cached {formatDistanceToNow(parseApiDate(data.synced_at), { addSuffix: true })}
               </span>
             )}
           </p>

@@ -5,6 +5,7 @@ import { BellRing, CheckCircle2, Download, ExternalLink, RefreshCw, ShieldAlert 
 import { getAlertsSummary, updateAlertTriage, type AlertItem, type AlertsSummaryResponse } from '../api/client'
 import LoadingSpinner from '../components/LoadingSpinner'
 import { downloadCsv } from '../utils/export'
+import { parseApiDate } from '../features/apiDate.js'
 
 type AlertDraft = {
   owner: string
@@ -166,7 +167,7 @@ export default function AlertsPage() {
             </div>
             {response?.generated_at && (
               <p className="text-xs text-slate-400">
-                Generated {formatDistanceToNow(new Date(response.generated_at), { addSuffix: true })}
+                Generated {formatDistanceToNow(parseApiDate(response.generated_at), { addSuffix: true })}
               </p>
             )}
           </div>
@@ -276,7 +277,7 @@ export default function AlertsPage() {
                       <span>Entity: <span className="text-slate-200">{alert.entity_label}</span></span>
                       {alert.metric && <span>Metric: <span className="text-slate-200">{alert.metric}</span></span>}
                       {alert.updated_at && (
-                        <span>Updated {formatDistanceToNow(new Date(alert.updated_at), { addSuffix: true })}</span>
+                        <span>Updated {formatDistanceToNow(parseApiDate(alert.updated_at), { addSuffix: true })}</span>
                       )}
                     </div>
                   </div>
