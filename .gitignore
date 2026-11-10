@@ -70,3 +70,6 @@ data/domains/*.secrets.json
 *.tmp
 .cache/
 .worktrees/
+
+# FUSE leftovers from a disk move (SQLite -shm copies)
+.fuse_hidden*
