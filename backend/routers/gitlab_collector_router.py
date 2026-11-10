@@ -829,9 +829,22 @@ async def get_security_summary(
         from backend.services.snyk_service import get_snyk_service
 
         service = get_snyk_service()
-        if sync_first:
-            service.refresh_data()
-        return service.get_security_summary()
+        refresh = service.refresh_data() if sync_first else None
+        summary = service.get_security_summary()
+        if refresh is not None:
+            # A failed or partial refresh must reach the caller: the summary then
+            # holds earlier counts for the failed orgs.
+            if not refresh.get("success"):
+                logger.warning("Snyk refresh before /security failed: %s", refresh.get("error"))
+            summary = {
+                **summary,
+                "refresh": {
+                    "success": bool(refresh.get("success")),
+                    "error": refresh.get("error"),
+                    "failed_orgs": refresh.get("failed_orgs", []),
+                },
+            }
+        return summary
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

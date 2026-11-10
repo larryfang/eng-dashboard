@@ -46,7 +46,9 @@ export default function App() {
         <Suspense fallback={<FullScreenLoader text="Loading page..." />}>
           <Routes>
             <Route path="/setup/new" element={<Setup onComplete={() => window.location.href = '/dashboard'} isNewDomain />} />
-            <Route path="/setup/*" element={<Setup onComplete={() => setConfigured(true)} />} />
+            {/* A full load, as for /setup/new: setting state alone left the URL on /setup,
+                which always renders the wizard, so "Open dashboard" did nothing. */}
+            <Route path="/setup/*" element={<Setup onComplete={() => { window.location.href = '/dashboard' }} />} />
             {!configured && <Route path="*" element={<Navigate to="/setup" replace />} />}
             <Route element={<Layout />}>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />

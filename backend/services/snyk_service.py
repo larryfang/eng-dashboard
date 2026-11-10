@@ -142,14 +142,21 @@ class SnykService:
                         "isFixed": False,
                     },
                 }
+                # A project error is not "no issues": let it fail the org, so the
+                # caller keeps the org's earlier counts (unknown, not zero).
                 try:
                     response = self._snyk_request("POST", url, headers, json=payload)
-                    for issue in response.json().get("issues", []):
-                        sev = issue.get("issueData", {}).get("severity")
-                        if sev in totals:
-                            totals[sev] += 1
-                except requests.exceptions.HTTPError:
-                    pass
+                except requests.exceptions.HTTPError as exc:
+                    # 404 only: the project went away after the list call, so it
+                    # has nothing to count. Every other status fails the org.
+                    if exc.response is not None and exc.response.status_code == 404:
+                        logger.warning("Snyk project %s not found (404); skipped", pid)
+                        continue
+                    raise
+                for issue in response.json().get("issues", []):
+                    sev = issue.get("issueData", {}).get("severity")
+                    if sev in totals:
+                        totals[sev] += 1
                 time.sleep(0.25)
 
         return totals
@@ -250,7 +257,22 @@ class SnykService:
             "generated_at": datetime.now().isoformat(),
         }
 
-    def _update_timeseries_csv(self, org_data: List[Dict[str, Any]]) -> bool:
+    def _earlier_rows(self) -> Dict[str, Dict[str, int]]:
+        """The counts of each org in the report on disk (empty when there is none)."""
+        if not self.current_report_path.exists():
+            return {}
+        out: Dict[str, Dict[str, int]] = {}
+        with open(self.current_report_path) as f:
+            for r in csv.DictReader(f):
+                if r.get("org") and r["org"] != "TOTAL":
+                    try:
+                        out[r["org"]] = {k: int(r[k]) for k in ("critical", "high", "medium", "low")}
+                    except (KeyError, TypeError, ValueError):
+                        continue
+        return out
+
+    def _update_timeseries_csv(self, org_data: List[Dict[str, Any]], keep_teams: Optional[set] = None) -> bool:
+        keep_teams = keep_teams or set()
         current_month = datetime.now().strftime("%B %Y")
         month_order = [
             "January", "February", "March", "April", "May", "June",
@@ -263,7 +285,7 @@ class SnykService:
                 with open(self.timeseries_path, "r") as f:
                     reader = csv.DictReader(f)
                     for row in reader:
-                        if row["Month"] != current_month:
+                        if row["Month"] != current_month or row["Team"] in keep_teams:
                             existing_rows.append(row)
 
             for org in org_data:
@@ -311,6 +333,8 @@ class SnykService:
 
             rows: List[Dict[str, Any]] = []
             totals = {"critical": 0, "high": 0, "medium": 0, "low": 0}
+            failed: List[str] = []
+            earlier = self._earlier_rows()
 
             with ThreadPoolExecutor(max_workers=4) as executor:
                 futures = {
@@ -322,8 +346,16 @@ class SnykService:
                     try:
                         severity = future.result()
                     except Exception as e:
+                        # Unknown, not zero: a failed read is never stored as a clean count.
+                        # The org's earlier counts stay in the report, so TOTAL (and the
+                        # returned totals) then mix fresh and earlier values; the signal
+                        # is success=False + failed_orgs in the refresh_data result
+                        # (/security returns it under "refresh").
                         logger.warning(f"Snyk fetch failed for {org['name']}: {e}")
-                        severity = {"critical": 0, "high": 0, "medium": 0, "low": 0}
+                        failed.append(org["name"])
+                        severity = earlier.get(org["name"])
+                        if severity is None:
+                            continue  # no earlier value: leave the org out of the report
                     rows.append({
                         "org": org["name"],
                         "critical": severity.get("critical", 0),
@@ -341,11 +373,23 @@ class SnykService:
                     writer.writerow([row["org"], row["critical"], row["high"], row["medium"], row["low"]])
                 writer.writerow(["TOTAL", totals["critical"], totals["high"], totals["medium"], totals["low"]])
 
-            self._update_timeseries_csv(rows)
+            # A failed org keeps its earlier point of this month.
+            self._update_timeseries_csv([r for r in rows if r["org"] not in failed], keep_teams=set(failed))
 
             elapsed = (datetime.now() - start_time).total_seconds()
-            logger.info(f"Snyk data refreshed: {len(orgs)} orgs in {elapsed:.1f}s")
+            logger.info(f"Snyk data refreshed: {len(orgs) - len(failed)} of {len(orgs)} orgs in {elapsed:.1f}s")
 
+            if failed:
+                return {
+                    "success": False,
+                    "error": f"Snyk read failed for {len(failed)} of {len(orgs)} orgs: {', '.join(sorted(failed))}"
+                    " (their earlier counts are kept)",
+                    "orgs_refreshed": len(orgs) - len(failed),
+                    "failed_orgs": sorted(failed),
+                    "totals": totals,
+                    "elapsed_seconds": round(elapsed, 1),
+                    "refreshed_at": datetime.now().isoformat(),
+                }
             return {
                 "success": True,
                 "orgs_refreshed": len(orgs),
