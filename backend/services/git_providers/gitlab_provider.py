@@ -10,6 +10,18 @@ logger = logging.getLogger(__name__)
 MAX_PAGES = 50
 
 
+def events_after_date(since_iso: str) -> str:
+    """The `after` value for GitLab `GET /users/:id/events`.
+
+    That API filters on `after` / `before` dates and ignores `created_after`.
+    `after` is exclusive, so the day before `since` keeps the first day in the
+    window (day granularity: up to 24 h wider than the MR window).
+    """
+    from datetime import datetime, timedelta
+
+    return (datetime.fromisoformat(since_iso.replace("Z", "+00:00")).date() - timedelta(days=1)).isoformat()
+
+
 @register("git_provider", "gitlab")
 class GitLabProvider(GitProvider):
     """Fetches engineer activity from the GitLab REST API."""
@@ -81,7 +93,7 @@ class GitLabProvider(GitProvider):
                     f"{self._url}/api/v4/users/{user_id}/events",
                     params={
                         "action": "pushed",
-                        "created_after": since_iso,
+                        "after": events_after_date(since_iso),
                         "per_page": 100,
                         "page": page,
                     },

@@ -24,6 +24,7 @@ from backend.services.datetime_utils import parse_dt
 from backend.services.domain_credentials import get_gitlab_settings
 from backend.services.git_providers.factory import create_provider
 from backend.services.git_providers.base import PullRequestData
+from backend.services.git_providers.gitlab_provider import events_after_date
 from backend.core.config_loader import get_domain_config
 from backend.services.domain_registry import get_active_slug
 
@@ -403,7 +404,7 @@ def _fetch_commit_count(gitlab_url: str, http: requests.Session, username: str, 
         while page <= MAX_PAGES:
             ev_resp = http.get(
                 f"{gitlab_url}/api/v4/users/{user_id}/events",
-                params={"action": "pushed", "created_after": since_iso, "per_page": 100, "page": page},
+                params={"action": "pushed", "after": events_after_date(since_iso), "per_page": 100, "page": page},
                 timeout=20,
             )
             ev_resp.raise_for_status()
